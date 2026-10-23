@@ -11,13 +11,6 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Поток">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait)" href="splash/s-750x1334.png">
-<link rel="apple-touch-startup-image" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1170x2532.png">
-<link rel="apple-touch-startup-image" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1179x2556.png">
-<link rel="apple-touch-startup-image" media="(device-width:428px) and (device-height:926px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1284x2778.png">
-<link rel="apple-touch-startup-image" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1290x2796.png">
-<link rel="apple-touch-startup-image" media="(device-width:402px) and (device-height:874px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1206x2622.png">
-<link rel="apple-touch-startup-image" media="(device-width:440px) and (device-height:956px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1320x2868.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
@@ -36,7 +29,7 @@
 @font-face{font-family:"Marck Script";src:url(marck-script.woff) format("woff");font-weight:400;font-style:normal;font-display:swap}
 :root{
   --bg:#F1F6FA; --surface:#FFFFFF; --surface-2:#E2ECF4; --surface-3:#D3E0EA; --sheet:#FFFFFF; --field:#F1F6FA;
-  --ink:#0F2233; --muted:#566878; --line:#D3E0EA; --grid:rgba(29,95,166,.055);
+  --ink:#0F2233; --muted:#566878; --line:#D3E0EA; --glow:rgba(77,148,230,.13);
   --accent:#1D5FA6; --accent-ink:#FFFFFF; --accent-soft:#DCEAF8; --accent-2:#4A93D6;
   --goal:#0A7480; --goal-soft:#D6EEF0;
   --reward:#E3923A; --reward-ink:#8F5410; --reward-soft:#F8E7CF;
@@ -47,7 +40,7 @@
   --good:#0A7480; --good-soft:#D6EEF0;
   --graphite:#566878; --graphite-soft:#E4ECF2;
   --scrim:rgba(10,34,51,.40); --card-shadow:0 1px 2px rgba(15,34,51,.06);
-  --sheet-shadow:0 -10px 30px rgba(15,34,51,.18);
+  --sheet-shadow:0 -10px 30px rgba(15,34,51,.18); --btn-shadow:0 1px 2px rgba(15,34,51,.08);
   --toast-bg:#0F2233; --toast-ink:#F1F6FA; --toast-act:#8CC8F5;
   --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
   --f-script:"Marck Script","Segoe Script","Snell Roundhand",cursive;
@@ -56,7 +49,7 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0A1520; --surface:#111F2E; --surface-2:#192D40; --surface-3:#243B50; --sheet:#0F1E2C; --field:#0C1A27;
-  --ink:#E6EFF6; --muted:#93A9BC; --line:#213447; --grid:rgba(109,181,240,.05);
+  --ink:#E6EFF6; --muted:#93A9BC; --line:#213447; --glow:rgba(77,148,230,.12);
   --accent:#6DB5F0; --accent-ink:#06223A; --accent-soft:#13314C; --accent-2:#8FCBF7;
   --goal:#58CFD4; --goal-soft:#10343A;
   --reward:#F0AE5E; --reward-ink:#F0AE5E; --reward-soft:#3A2A16;
@@ -66,12 +59,12 @@
   --bad:#F2867C; --bad-soft:#3E1F1C;
   --good:#58CFD4; --good-soft:#10343A;
   --graphite:#93A9BC; --graphite-soft:#1B2A38;
-  --scrim:rgba(0,0,0,.62); --card-shadow:none; --sheet-shadow:0 -1px 0 var(--line);
+  --scrim:rgba(0,0,0,.62); --card-shadow:none; --sheet-shadow:0 -1px 0 var(--line); --btn-shadow:none; --btn-bg:var(--surface-2);
   --toast-bg:#E6EFF6; --toast-ink:#0A1520; --toast-act:#1D5FA6;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0A1520; --surface:#111F2E; --surface-2:#192D40; --surface-3:#243B50; --sheet:#0F1E2C; --field:#0C1A27;
-  --ink:#E6EFF6; --muted:#93A9BC; --line:#213447; --grid:rgba(109,181,240,.05);
+  --ink:#E6EFF6; --muted:#93A9BC; --line:#213447; --glow:rgba(77,148,230,.12);
   --accent:#6DB5F0; --accent-ink:#06223A; --accent-soft:#13314C; --accent-2:#8FCBF7;
   --goal:#58CFD4; --goal-soft:#10343A;
   --reward:#F0AE5E; --reward-ink:#F0AE5E; --reward-soft:#3A2A16;
@@ -81,7 +74,7 @@
   --bad:#F2867C; --bad-soft:#3E1F1C;
   --good:#58CFD4; --good-soft:#10343A;
   --graphite:#93A9BC; --graphite-soft:#1B2A38;
-  --scrim:rgba(0,0,0,.62); --card-shadow:none; --sheet-shadow:0 -1px 0 var(--line);
+  --scrim:rgba(0,0,0,.62); --card-shadow:none; --sheet-shadow:0 -1px 0 var(--line); --btn-shadow:none; --btn-bg:var(--surface-2);
   --toast-bg:#E6EFF6; --toast-ink:#0A1520; --toast-act:#1D5FA6;
   color-scheme:dark}
 
@@ -96,7 +89,7 @@
 
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;touch-action:manipulation}
-body{margin:0;min-height:100vh;min-height:100dvh;overflow-x:hidden;background-color:var(--bg);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:28px 28px;background-position:-1px -1px;color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+body{margin:0;min-height:100vh;min-height:100dvh;overflow-x:hidden;background-color:var(--bg);background-image:radial-gradient(120% 340px at 50% -60px,var(--glow),transparent 72%);background-repeat:no-repeat;color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
 input,select,textarea{font-size:16px!important}
 button{cursor:pointer}
@@ -125,7 +118,7 @@ section.block{display:flex;flex-direction:column;gap:10px}
 .btn{border:0;border-radius:var(--r-sm);padding:12px 16px;font-weight:600;background:var(--surface-2);display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .btn .ic{width:18px;height:18px}
 .btn.primary{background:var(--accent);color:var(--accent-ink)}
-.btn.ghost{background:transparent;border:1px solid var(--line)}
+.btn.ghost{background:var(--btn-bg,var(--surface));border:1px solid var(--line);box-shadow:var(--btn-shadow)}
 .btn.danger{background:var(--bad-soft);color:var(--bad)}
 .btn.reward{background:var(--reward);color:#2B1A06}
 .btn.sm{padding:8px 12px;font-size:14px;border-radius:10px}
@@ -438,23 +431,6 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 <script>['gesturestart','gesturechange','gestureend'].forEach(function(e){document.addEventListener(e,function(ev){ev.preventDefault()})});var _t=0;document.addEventListener('touchend',function(ev){if(ev.target.closest&&ev.target.closest('input,select,textarea'))return;var n=Date.now();if(n-_t<350)ev.preventDefault();_t=n},{passive:false});</script>
 </head>
 <body>
-<div id="splash" aria-hidden="true">
-  <div class="sp-grid"></div>
-  <div class="sp-stage">
-    <svg class="sp-svg" viewBox="0 0 320 300" focusable="false">
-      <ellipse class="sp-ring" cx="160" cy="196" rx="5" ry="1.8"/>
-      <ellipse class="sp-ring r2" cx="160" cy="196" rx="5" ry="1.8"/>
-      <g class="sp-flow">
-        <path class="sp-w w3" pathLength="1" stroke="#BFE1FA" stroke-width="2" d="M-8 224 C34 206 74 244 116 224 S198 204 240 224 S300 242 328 224"/>
-        <path class="sp-w w2" pathLength="1" stroke="#3F8FD6" stroke-width="3.5" d="M-8 210 C34 192 74 230 116 210 S198 190 240 210 S300 228 328 210"/>
-        <path class="sp-w w1" pathLength="1" stroke="#7CC0F2" stroke-width="4" d="M-8 196 C34 178 74 216 116 196 S198 176 240 196 S300 214 328 196"/>
-      </g>
-      <path class="sp-drop" d="M160 172 C167 182 172 188 172 193 a12 12 0 1 1 -24 0 C148 188 153 182 160 172Z"/>
-    </svg>
-    <div class="sp-word">Поток</div>
-    <div class="sp-sub">семейные деньги</div>
-  </div>
-</div>
 <header class="top"><div class="wrap top-in">
   <div><div class="eyebrow" id="monthLbl">&nbsp;</div><h1>Поток</h1></div>
   <div class="hdr-btns">
