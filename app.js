@@ -464,9 +464,22 @@ function openSheet(html,onMount){
   const sh=$('#sheet'); sh.classList.remove('closing'); sh.innerHTML=`<div class="wrap">${html}</div>`; sh.hidden=false; $('#scrim').hidden=false; sh.scrollTop=0;
   onMount&&onMount(sh); const f=sh.querySelector('input.big,input'); f&&!f.dataset.nofocus&&setTimeout(()=>f.focus(),60);
 }
+/* Шторка над клавиатурой iPhone: держим её в видимой области и не даём полю ввода уехать за край */
+function fitSheet(){
+  const sh=$('#sheet'), vv=window.visualViewport; if(!sh||sh.hidden||!vv) return;
+  const kb=Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop));
+  if(kb>60){sh.style.bottom=kb+'px';sh.style.maxHeight=Math.round(vv.height-8)+'px'}else{sh.style.bottom='';sh.style.maxHeight=''}
+  const a=document.activeElement;
+  if(kb>60&&a&&sh.contains(a)&&a.tagName==='INPUT'){const r=a.getBoundingClientRect(),b=sh.getBoundingClientRect();
+    if(r.top<b.top+8||r.bottom>b.bottom-8) sh.scrollTop+=r.top-b.top-56}
+}
+const PTR={down:false};
+document.addEventListener('pointerdown',()=>PTR.down=true,true);['pointerup','pointercancel'].forEach(t=>document.addEventListener(t,()=>setTimeout(()=>PTR.down=false,0),true));
+if(window.visualViewport){visualViewport.addEventListener('resize',fitSheet);visualViewport.addEventListener('scroll',fitSheet)}
+document.addEventListener('focusin',e=>{if(e.target.closest&&e.target.closest('#sheet'))setTimeout(fitSheet,320)});
 function closeSheet(){
   S.sheetRefresh=null; const sh=$('#sheet'), sc=$('#scrim'); if(sh.hidden)return;
-  const done=()=>{sh.classList.remove('closing');sc.classList.remove('closing');sh.hidden=true;sc.hidden=true;sh.innerHTML=''};
+  const done=()=>{sh.classList.remove('closing');sc.classList.remove('closing');sh.style.bottom='';sh.style.maxHeight='';sh.hidden=true;sc.hidden=true;sh.innerHTML=''};
   if(calm()){done();return}
   sh.classList.add('closing');sc.classList.add('closing');clearTimeout(sheetT);sheetT=setTimeout(done,180);
 }
@@ -660,8 +673,12 @@ function openWish(w){
     let v=null;
     const price=()=>Math.round(parseAmt($('#wPrice').value));
     const name=()=>$('#wName').value.trim();
-    const draw=()=>{if(!$('#wVerdict'))return;v=analyzeWish(price(),$('#wFund').value,w.id||'');$('#wVerdict').innerHTML=wishBox(v)};
+    // пока открыта клавиатура, показываем одну короткую строку: большой блок выталкивал поле цены за край экрана
+    const typing=()=>{const a=document.activeElement;return !!a&&(a.id==='wPrice'||a.id==='wName')};
+    const draw=()=>{if(!$('#wVerdict'))return;v=analyzeWish(price(),$('#wFund').value,w.id||'');
+      $('#wVerdict').innerHTML=typing()&&v?`<div class="verdict mini ${v.tone}"><b>${esc(v.title)}</b><span class="muted small">Варианты появятся, когда закончите ввод</span></div>`:wishBox(v);fitSheet()};
     $('#wPrice').addEventListener('input',()=>{$('#wErr').textContent='';draw()});$('#wFund').addEventListener('change',draw);draw();
+    ['wPrice','wName'].forEach(id=>{$('#'+id).addEventListener('focus',draw);$('#'+id).addEventListener('blur',()=>{const go=()=>PTR.down?setTimeout(go,50):setTimeout(draw,60);go()})});
     S.sheetRefresh=draw;
     $('#wVerdict').addEventListener('click',async e=>{
       const b=e.target.closest('[data-wopt]'); if(!b||!v)return; const o=v.opts[+b.dataset.wopt]; if(!o)return;
