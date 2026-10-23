@@ -1,0 +1,42 @@
+rules_version = '2';
+// Правила доступа: данные семьи видят и меняют только её участники.
+// Вставьте этот текст в Firebase → Firestore Database → Rules и нажмите Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isMember(hid) {
+      return signedIn() && exists(/databases/$(database)/documents/households/$(hid)/members/$(request.auth.uid));
+    }
+
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /invites/{code} {
+      allow get: if signedIn();
+      allow create: if isMember(request.resource.data.hid);
+      allow delete: if isMember(resource.data.hid);
+    }
+
+    match /households/{hid} {
+      allow read, update: if isMember(hid);
+      allow create: if signedIn() && request.resource.data.owner == request.auth.uid;
+
+      match /members/{uid} {
+        allow read: if isMember(hid);
+        allow create: if signedIn() && request.auth.uid == uid && (
+          get(/databases/$(database)/documents/households/$(hid)).data.owner == uid
+          || (request.resource.data.code is string
+              && exists(/databases/$(database)/documents/invites/$(request.resource.data.code))
+              && get(/databases/$(database)/documents/invites/$(request.resource.data.code)).data.hid == hid)
+        );
+        allow update: if signedIn() && request.auth.uid == uid && isMember(hid);
+        allow delete: if isMember(hid);
+      }
+
+      match /{col}/{docId} {
+        allow read, write: if col in ['funds', 'tx', 'wishes'] && isMember(hid);
+      }
+    }
+  }
+}
