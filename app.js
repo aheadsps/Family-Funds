@@ -10,6 +10,14 @@ const KINDS = {
   reward:{label:'Награды: % от денег сверх плана', short:'награды'},
   rest:{label:'Всё, что осталось', short:'остаток'}
 };
+const KIND_UI = {monthly:'Платёж в месяц',percent:'% с дохода',rest:'Весь остаток',goal:'🎯 Накопить сумму',debt:'💳 Погасить долг'};
+const KIND_HINT = {
+  monthly:'Каждый месяц фонд забирает из доходов фиксированную сумму и останавливается, когда набрал её. Для квартиры, еды, связи, кружков.',
+  percent:'С каждого поступления фонд сразу берёт свой процент, сколько бы ни пришло. Для налога и подушки безопасности.',
+  rest:'Забирает всё, что осталось после остальных фондов. Ставьте его последним в очереди.',
+  goal:'Фонд копит до нужной суммы. Когда цель набрана, он перестаёт забирать деньги и они идут дальше по очереди.',
+  debt:'Фонд получает деньги и гасит ими долг. Когда долг закрыт, фонд больше ничего не забирает, а вам положен бонус на награду.'
+};
 const PREP = ['январе','феврале','марте','апреле','мае','июне','июле','августе','сентябре','октябре','ноябре','декабре'];
 const NOM = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const GEN = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
@@ -589,7 +597,14 @@ function openFund(f,kindPreset){
   openSheet(`${sheetHead(isNew?(f.kind==='debt'?'Новый долг':'Новый фонд'):'Фонд')}
   <div class="field"><label for="fName">Название</label><input id="fName" value="${esc(f.name)}" placeholder="${f.kind==='debt'?'Например, Кредитка':'Например, Квартира'}"></div>
   <div class="field"><span class="lbl">Иконка <span class="muted" id="fIcoNote"></span></span><div class="emojis" id="fIco">${EMOJI.map(e=>`<button type="button" data-e="${e}" aria-pressed="${icon===e}" aria-label="Иконка ${e}">${e}</button>`).join('')}</div></div>
-  <div class="field"><label for="fKind">Как он забирает деньги</label><select id="fKind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}" ${f.kind===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
+  <input type="hidden" id="fKind" value="${esc(f.kind)}">
+  <div class="field"><span class="lbl">Как фонд забирает деньги</span>
+    <div class="seg three kind-seg" id="fKindOps">${['monthly','percent','rest'].map(k=>`<button type="button" data-k="${k}" aria-pressed="${f.kind===k}">${KIND_UI[k]}</button>`).join('')}</div>
+    <span class="lbl kind-or">Или у фонда есть цель</span>
+    <div class="kind-tags" id="fKindTags">${['goal','debt'].map(k=>`<button type="button" class="kind-tag" data-k="${k}" aria-pressed="${f.kind===k}">${KIND_UI[k]}</button>`).join('')}</div>
+    <button type="button" class="kind-reward" data-k="reward" aria-pressed="${f.kind==='reward'}"><span class="kr-ico">🎁</span><span class="kr-txt"><b>Фонд наград</b><span>Деньги на покупки для себя из того, что осталось сверх плана</span></span></button>
+    <div class="kind-hint" id="fKindHint"></div>
+  </div>
   <div class="field" id="fValBox"><label for="fVal" id="fValLbl"></label><input id="fVal" inputmode="decimal" value="${f.value!==''&&f.value!=null&&f.kind!=='debt'?nf.format(f.value):''}"></div>
   <label class="check" id="fTaxBox"><input type="checkbox" id="fTax" ${f.taxOnly?'checked':''}> Только с доходов, облагаемых налогом</label>
   <div class="field" id="fCapBox"><label for="fCap">Не больше в месяц, ₽ (необязательно)</label><input id="fCap" inputmode="decimal" value="${+f.cap?nf.format(f.cap):''}"><span class="note">Цель будет забирать из каждого месяца не больше этой суммы, остальное пойдёт дальше по очереди.</span></div>
@@ -603,9 +618,20 @@ function openFund(f,kindPreset){
     const icoNote=()=>{$('#fIcoNote').textContent=icon?'':`· сейчас ${fundEmoji({name:$('#fName').value,kind:$('#fKind').value})}, подобрана по названию`};
     $('#fIco').addEventListener('click',e=>{const b=e.target.closest('[data-e]');if(!b)return;icon=icon===b.dataset.e?'':b.dataset.e;$('#fIco').querySelectorAll('[data-e]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.e===icon)));icoNote()});
     $('#fName').addEventListener('input',icoNote);
+    const pick=e=>{const b=e.target.closest('[data-k]');if(!b)return;$('#fKind').value=b.dataset.k;sync()};
+    ['#fKindOps','#fKindTags'].forEach(s=>$(s).addEventListener('click',pick));$('.kind-reward').addEventListener('click',pick);
+    const rewardHint=()=>{
+      const pct=parseAmt($('#fVal').value)||REWARD_DEFAULT; const F=monthFlow(monthPicture());
+      const ex=F.known&&F.base>0?`<p>При вашем обычном доходе сверх плана остаётся около ${fmt(F.base)} в месяц. ${nf.format(pct)}% от них — примерно <b>${fmt(F.base*pct/100)}</b> в месяц на награды.</p>`
+        :`<p>Например: пришло 300 000 ₽, налог и обязательные платежи забрали 220 000 ₽. Сверх плана осталось 80 000 ₽, и ${nf.format(pct)}% от них, ${fmt(80000*pct/100)}, уйдут в награды.</p>`;
+      return `<p><b>Как это работает.</b> Сначала из дохода берутся налог и обязательные платежи. Всё, что осталось сверху, это деньги сверх плана. Фонд наград забирает от них свой процент, остальное идёт на долги и накопления.</p>${ex}<p>Тратьте эти деньги на себя без чувства вины: так проще не сорваться и держать план по долгам. А за каждый закрытый долг положен отдельный бонус на покупку: ${BONUS_PCT}% от его суммы.</p>`;
+    };
     const sync=()=>{const k=$('#fKind').value;
+      document.querySelectorAll('#fKindOps [data-k],#fKindTags [data-k],.kind-reward').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.k===k)));
+      $('#fKindHint').innerHTML=k==='reward'?rewardHint():`<p>${KIND_HINT[k]||''}</p>`;
+      $('#fKindHint').classList.toggle('reward',k==='reward');
       $('#fValBox').hidden=k==='rest'||k==='debt';
-      $('#fValLbl').textContent=k==='percent'?'Процент от дохода':k==='reward'?'Процент от денег сверх обязательных платежей':k==='monthly'?'Сумма в месяц, ₽':'Цель, ₽';
+      $('#fValLbl').textContent=k==='percent'?'Процент от дохода':k==='reward'?'Какой процент от денег сверх плана откладывать':k==='monthly'?'Сумма в месяц, ₽':'Цель, ₽';
       $('#fCapBox').hidden=k!=='goal';
       $('#fTaxBox').hidden=k!=='percent';
       $('#fDebtBox').hidden=k!=='debt';
@@ -615,7 +641,7 @@ function openFund(f,kindPreset){
       $('#fCurNote').textContent=k==='debt'?'Укажите текущий остаток. Позже его можно поправить, если банк начислил проценты.':'Если деньги уже отложены, укажите сумму. Иначе оставьте пустым.';
       icoNote();
     };
-    $('#fKind').addEventListener('change',sync);sync();
+    $('#fVal').addEventListener('input',()=>{if($('#fKind').value==='reward')$('#fKindHint').innerHTML=rewardHint()});sync();
     $('#fSave').addEventListener('click',async()=>{
       const name=$('#fName').value.trim(); const kind=$('#fKind').value;
       if(!name){$('#fErr').textContent='Дайте фонду название.';return}

@@ -432,6 +432,21 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 @keyframes spWave{from{transform:translateX(-50px)}to{transform:translateX(0)}}
 @keyframes spFade{from{opacity:0}}
 @keyframes spUp{from{opacity:0;transform:translateY(10px)}}
+.kind-seg button{font-size:13px;padding:10px 4px}
+.kind-or{margin-top:6px}
+.kind-tags{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kind-tag{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:10px 12px;font-weight:600;font-size:14px;color:var(--muted);transition:background-color .2s,border-color .2s,color .2s,transform .12s}
+.kind-tag[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.kind-reward{display:flex;align-items:center;gap:12px;text-align:left;margin-top:6px;border:1px dashed var(--reward);background:var(--surface);border-radius:var(--r-sm);padding:12px;color:var(--ink);transition:background-color .2s,transform .12s}
+.kind-reward[aria-pressed="true"]{border-style:solid;background:var(--reward-soft)}
+.kind-reward .kr-ico{font-size:22px;line-height:1}
+.kind-reward .kr-txt{display:flex;flex-direction:column;gap:2px}
+.kind-reward .kr-txt span{font-size:13px;color:var(--muted)}
+.kind-tag:active,.kind-reward:active{transform:scale(.97)}
+.kind-hint{font-size:13px;color:var(--muted);background:var(--surface-2);border-radius:var(--r-sm);padding:10px 12px;margin-top:4px}
+.kind-hint p{margin:0 0 6px}.kind-hint p:last-child{margin:0}
+.kind-hint.reward{background:var(--reward-soft);color:var(--ink)}
+.kind-hint.reward b{color:var(--reward-ink)}
 </style>
 <script>['gesturestart','gesturechange','gestureend'].forEach(function(e){document.addEventListener(e,function(ev){ev.preventDefault()})});var _t=0;document.addEventListener('touchend',function(ev){if(ev.target.closest&&ev.target.closest('input,select,textarea'))return;var n=Date.now();if(n-_t<350)ev.preventDefault();_t=n},{passive:false});</script>
 </head>
