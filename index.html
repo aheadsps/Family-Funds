@@ -182,13 +182,17 @@ body{margin:0;min-height:100vh;min-height:100dvh}
 .link{background:none;border:0;color:var(--accent);font-weight:600;padding:6px 2px;text-decoration:underline;text-underline-offset:3px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px}
 .code{font-family:var(--f-display);font-weight:700;font-size:26px;letter-spacing:.12em;padding:12px 14px;border-radius:12px;background:var(--accent-soft);color:var(--accent);user-select:all;-webkit-user-select:all}
+.chip.reward{background:var(--good-soft);color:var(--good)}
+.opt-act{margin-top:8px}
+.wish-box{display:flex;flex-direction:column;gap:10px}
+.wish-box .tip{background:var(--bg)}
+#exHint p{margin:0 0 4px}
 </style>
 </head>
 <body>
 <header class="top"><div class="wrap top-in">
   <div><div class="eyebrow" id="monthLbl">&nbsp;</div><h1>Семейные фонды</h1></div>
   <div class="hdr-btns">
-    <button class="btn primary sm" id="addBtn" data-act="open-income" hidden>+ Запись</button>
     <button class="icon-btn" id="setBtn" data-act="settings" aria-label="Семья и настройки" hidden>☰</button>
   </div>
 </div></header>
