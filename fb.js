@@ -113,6 +113,7 @@ export function watchCol(col, cb, err) {
    ждёт в очереди и уходит на сервер сама. Ошибки сервера идут в onError. */
 function fire(p) { p.catch(e => onError(e)); return Promise.resolve(); }
 export function add(col, data) { const ref = F.doc(F.collection(db, 'households', hid, col)); fire(F.setDoc(ref, data)); return Promise.resolve(ref.id); }
+export function set(col, id, data) { return fire(F.setDoc(d('households', hid, col, id), data)); }
 export function setHousehold(data) { return fire(F.updateDoc(d('households', hid), data)); }
 export function update(col, id, data) { return fire(F.updateDoc(d('households', hid, col, id), data)); }
 export function del(col, id) { return fire(F.deleteDoc(d('households', hid, col, id))); }
