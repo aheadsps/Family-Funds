@@ -31,7 +31,7 @@ const EMOJI = ['🏠','💡','🛒','🍎','🚗','⛽','📱','🌐','🏊','�
 const GUESS = [[/налог/i,'🧾'],[/квартир|аренд|ипотек|жиль/i,'🏠'],[/коммун|свет|газ|вод[аы]/i,'💡'],[/ед[аы]\b|продукт|еда/i,'🛒'],[/машин|авто|бензин|транспорт/i,'🚗'],
   [/связь|интернет|телефон/i,'📱'],[/бассейн|спорт/i,'🏊'],[/сад|кружк|дет|школ/i,'👶'],[/учёб|учеб|курс|образов/i,'🎓'],[/лекарств|здоров|врач|аптек/i,'💊'],
   [/кредитк|кредит|займ|рассроч/i,'💳'],[/друг|долг/i,'🤝'],[/подушк|резерв/i,'🛟'],[/наград|радост/i,'🎁'],[/накоплен|сбереж/i,'🏦'],[/отпуск|путешеств|переезд|зеланд/i,'✈️'],
-  [/подписк/i,'📺'],[/земл|участ/i,'🌿'],[/покупка:/i,'🎯'],[/одежд/i,'👕'],[/живот|кот|собак/i,'🐾']];
+  [/подписк/i,'📺'],[/инвест|акци|бирж/i,'📈'],[/земл|участ/i,'🌿'],[/покупка:/i,'🎯'],[/одежд/i,'👕'],[/живот|кот|собак/i,'🐾']];
 const KIND_EMOJI = {percent:'🧾',monthly:'💰',goal:'🎯',debt:'💳',reward:'🎁',rest:'🏦'};
 function fundEmoji(f){if(!f)return '•';if(f.icon)return f.icon;const g=GUESS.find(([re])=>re.test(f.name||''));return g?g[1]:(KIND_EMOJI[f.kind]||'💰')}
 function fundIcon(f,cls=''){if(!f||f==='_free')return `<span class="fi k-free ${cls}" aria-hidden="true">🪙</span>`;return `<span class="fi k-${f.kind} ${cls}" aria-hidden="true">${fundEmoji(f)}</span>`}
@@ -294,6 +294,7 @@ function render(){
   resolveNames();
   if(S.sheetRefresh&&!$('#sheet').hidden)S.sheetRefresh();
   checkCelebrations();
+  maybeTour();
 }
 const calm=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 function moveTabInd(){
@@ -895,8 +896,8 @@ function debtBudget(){
   const o=+(S.household&&S.household.debtBudget)||0; if(o>0) return {v:o,auto:false,known:true};
   const F=monthFlow(monthPicture()); return {v:Math.max(0,Math.round(F.free)),auto:true,known:F.known};
 }
-function simulate(strat,budget){
-  const live=orderDebts(debtList().filter(d=>d.bal>0.5),strat).map(d=>({...d}));
+function simulate(strat,budget,list){
+  const live=orderDebts((list||debtList()).filter(d=>d.bal>0.5),strat).map(d=>({...d}));
   if(!live.length) return {none:true};
   const total=sum(live.map(d=>d.bal)), mins=sum(live.map(d=>d.min));
   if(!(budget>0)) return {noBudget:true,total,mins};
@@ -1020,6 +1021,7 @@ document.addEventListener('click',async e=>{
   const a=e.target.closest('[data-act]'); if(!a)return;
   const act=a.dataset.act;
   if(await onGateAction(act,a))return;
+  if(act==='tour'){closeSheet();LS.del(tourKey());if(TR)tourEnd();LS.del(tourKey());S.tab='now';S.enterNext=true;render();window.scrollTo(0,0);return}
   if(act==='wz-restart'){closeSheet();S.wz=newWizard(activeFunds().length?'existing':'new');S.status='setup';S.enterNext=true;render();window.scrollTo(0,0);return}
   if(await wzAction(act,a))return;
   if(act==='close')closeSheet();
@@ -1081,29 +1083,54 @@ function wishTips(){
   return out;
 }
 
-/* ---------- пошаговая настройка ---------- */
-const TPL_MONTHLY=['Квартира или аренда','Коммуналка','Еда','Связь и интернет','Транспорт, бензин','Платёж по кредиту','Детский сад, кружки','Подписки','Лекарства'];
-const KIND_SHORT={percent:'налог',monthly:'каждый месяц',reward:'награды',debt:'долг',goal:'цель',rest:'остаток'};
+/* ---------- пошаговая настройка ----------
+   Первый вход: 4 шага (доход → фонды → план → семья), потом подсказки на главной.
+   «Пройти настройку заново» из меню: короткий режим, фонды не меняются. */
+const KIND_SHORT={percent:'процент',monthly:'каждый месяц',reward:'награды',debt:'долг',goal:'цель',rest:'остаток'};
+const WZ_KINDS={
+  monthly:{t:'Платёж в месяц',e:'🔁',s:'Одна и та же сумма каждый месяц',
+    why:'Для расходов, которые повторяются каждый месяц: жильё, еда, связь, кружки. Фонд забирает из доходов свою сумму и останавливается, остальное течёт дальше.',
+    ex:'квартира 40 000 ₽. Первые 40 000 ₽ месяца уходят сюда, следующие идут в другие фонды.',
+    ph:'В месяц',sfx:'₽',tpl:['Квартира или аренда','Ипотека','Коммуналка','Еда','Связь и интернет','Транспорт, бензин','Платёж по кредиту','Детский сад, кружки','Подписки','Лекарства']},
+  percent:{t:'% с дохода',e:'📊',s:'Доля от каждого поступления',
+    why:'С каждого поступления фонд берёт свой процент, сколько бы ни пришло. Удобно, когда доход плавает: заработали больше, больше и отложили.',
+    ex:'инвестиции 10%. Пришло 200 000 ₽, и 20 000 ₽ сразу ушли в фонд.',
+    ph:'С дохода',sfx:'%',tpl:['Инвестиции','Подушка безопасности','Образование','Благотворительность']},
+  goal:{t:'Накопить сумму',e:'🎯',s:'Копит до нужной суммы',
+    why:'Копит до нужной суммы и выключается. Как только цель собрана, деньги идут следующим фондам.',
+    ex:'подушка 100 000 ₽. Наберётся за несколько месяцев и перестанет забирать деньги.',
+    ph:'Цель',sfx:'₽',tpl:['Подушка безопасности','Отпуск','Переезд','Ремонт','Машина','Подарки']},
+  debt:{t:'Погасить долг',e:'💳',s:'Гасит долг свободными деньгами',
+    why:`Получает свободные деньги и гасит ими долг. Когда долг закрыт, фонд выключается, а семье положена награда: ${BONUS_PCT}% от суммы долга на что-то приятное.`,
+    ex:'кредитка 60 000 ₽ под 30%. Укажите остаток и ставку, и план покажет, когда она закроется.',
+    ph:'Остаток',sfx:'₽',tpl:['Кредитка','Потребкредит','Рассрочка','Долг другу','Долг за учёбу']}
+};
+const WZ_NAMES={income:'Доход',funds:'Фонды',plan:'План',invite:'Семья'};
 function newWizard(mode){
-  return {mode,step:0,income:+(S.household&&S.household.expectedIncome)?String(S.household.expectedIncome):'',
-    tax:{on:true,pct:'6'},
-    monthly:[{name:'Квартира или аренда',amount:''},{name:'Коммуналка',amount:''},{name:'Еда',amount:''}],
-    debts:[],cushion:'',reward:{on:true,pct:String(REWARD_DEFAULT)},restName:'Накопления',
-    wishes:[{name:'',price:''}],busy:false};
+  const income=+(S.household&&S.household.expectedIncome)?String(S.household.expectedIncome):'';
+  if(mode!=='new') return {mode,step:0,income,wishes:[{name:'',price:''}],busy:false};
+  return {mode,step:0,income,tax:{on:false,pct:'6'},
+    funds:[{name:'Квартира или аренда',kind:'monthly',amount:'',rate:''}],
+    kind:'monthly',reward:{on:true,pct:String(REWARD_DEFAULT)},strat:'avalanche',saved:false,sent:false,busy:false};
 }
-const wzSteps=()=>S.wz.mode==='new'?['intro','income','monthly','debts','savings','wishes','finish']:['intro','income','queue','wishes','finish'];
+const wzSteps=()=>S.wz.mode==='new'?['income','funds','plan','invite']:['intro','income','queue','wishes','finish'];
 const nA=x=>Math.round(parseAmt(x));
+const wzValid=r=>r.name.trim()&&parseAmt(r.amount)>0;
 function wzFunds(){
   const z=S.wz; if(z.mode!=='new') return activeFunds();
+  const rows=z.funds.map((r,i)=>({r,i})).filter(({r})=>wzValid(r)); const of=k=>rows.filter(({r})=>r.kind===k);
   const L=[];
   if(z.tax.on&&parseAmt(z.tax.pct)>0) L.push({id:'d-tax',name:'Налоги',kind:'percent',value:parseAmt(z.tax.pct),taxOnly:true});
-  z.monthly.forEach((r,i)=>{if(r.name.trim()&&nA(r.amount)>0)L.push({id:'d-m'+i,name:r.name.trim(),kind:'monthly',value:nA(r.amount)})});
+  of('percent').forEach(({r,i})=>L.push({id:'d-f'+i,name:r.name.trim(),kind:'percent',value:Math.min(100,parseAmt(r.amount))}));
+  of('monthly').forEach(({r,i})=>L.push({id:'d-f'+i,name:r.name.trim(),kind:'monthly',value:nA(r.amount)}));
   if(z.reward.on&&parseAmt(z.reward.pct)>0) L.push({id:'d-rw',name:'Награды',kind:'reward',value:parseAmt(z.reward.pct)});
-  if(nA(z.cushion)>0) L.push({id:'d-c',name:'Подушка безопасности',kind:'goal',value:nA(z.cushion)});
-  z.debts.forEach((r,i)=>{if(r.name.trim()&&nA(r.amount)>0)L.push({id:'d-d'+i,name:r.name.trim(),kind:'debt',value:nA(r.amount),deadline:r.deadline||''})});
-  L.push({id:'d-rest',name:z.restName.trim()||'Накопления',kind:'rest',value:0});
+  of('goal').forEach(({r,i})=>L.push({id:'d-f'+i,name:r.name.trim(),kind:'goal',value:nA(r.amount)}));
+  const debts=of('debt').map(({r,i})=>{const rate=Math.max(0,parseAmt(r.rate));return {f:{id:'d-f'+i,name:r.name.trim(),kind:'debt',value:nA(r.amount),rate,rateSet:String(r.rate||'').trim()!==''},bal:nA(r.amount),rate,min:0}});
+  orderDebts(debts,z.strat).forEach(d=>L.push(d.f));
+  L.push({id:'d-rest',name:'Накопления',kind:'rest',value:0});
   return L;
 }
+const wzDebts=()=>wzFunds().filter(f=>f.kind==='debt').map(f=>({f,bal:+f.value||0,rate:+f.rate||0,min:0}));
 function wzMetrics(){
   const funds=wzFunds(), inc=nA(S.wz.income), ex=S.wz.mode!=='new';
   const g=ex?stats().get:null; const left=f=>ex?(f.kind==='debt'?fstate(f,g).remaining:Math.max(0,(+f.value||0)-fstate(f,g).balance)):(+f.value||0);
@@ -1129,39 +1156,76 @@ function simSplit(funds,amount){
   return rows;
 }
 const whenTxt=k=>k==null?'когда появятся свободные деньги':k<=1?'в ближайший месяц':monthIn(k);
+function splitHtml(M){
+  if(!M.inc) return '<p class="note">Укажите доход семьи, чтобы увидеть разбивку.</p>';
+  const rows=simSplit(M.funds,M.inc);
+  const sub=(f,give)=>{const v=+f.value||0;
+    if(f.kind==='percent') return f.taxOnly?`налог · ${nf.format(v)}%`:`${nf.format(v)}% с каждого дохода`;
+    if(f.kind==='monthly') return 'каждый месяц';
+    if(f.kind==='reward') return `награды · ${nf.format(v)}% сверх обязательных платежей`;
+    if(f.kind==='rest') return 'всё, что осталось';
+    const what=f.kind==='debt'?`долг ${fmt(v)}`:`цель ${fmt(v)}`;
+    const k=M.eta[f.id]; const when=k!=null?(f.kind==='debt'?' · закроется ':' · наберётся ')+whenTxt(k):'';
+    return what+(give?when:' · ждёт, пока заполнятся фонды выше');
+  };
+  return `<div class="list wz-split">${rows.map(({f,give})=>`<div class="srow k-${f.kind}">${fundIcon(f,'sm')}<div class="sb"><div class="row-main"><span class="name">${esc(f.name)}</span><span class="amt ${give?'':'muted'}">${fmt(give)}</span></div><div class="note">${esc(sub(f,give))}</div></div></div>`).join('')}</div>
+    ${M.base<0?'<p class="err">Обязательные платежи больше дохода: проверьте суммы.</p>':''}`;
+}
 
 function wzRow(list,i,r,fields){
   return `<div class="wz-row" data-row="${list}-${i}">${fields.map(([key,ph,type])=>`<input data-wz-list="${list}" data-i="${i}" data-field="${key}" ${type==='num'?'inputmode="decimal"':type==='date'?'type="date"':''} placeholder="${ph}" value="${esc(r[key]||'')}" aria-label="${ph}" class="${type==='num'?'num':type==='date'?'date':''}">`).join('')}<button class="x sm" data-act="wz-del" data-list="${list}" data-i="${i}" aria-label="Удалить строку">${ic('x')}</button><div class="wz-eta note" data-eta="${list}-${i}"></div></div>`;
 }
+function wzFundRow(r,i){
+  const K=WZ_KINDS[r.kind]||WZ_KINDS.monthly;
+  return `<div class="wzf k-${r.kind}" data-row="funds-${i}">
+    <span class="fi sm" data-emo="${i}" aria-hidden="true">${fundEmoji({name:r.name,kind:r.kind})}</span>
+    <input class="wzf-name" data-wz-list="funds" data-i="${i}" data-field="name" placeholder="Название" value="${esc(r.name)}" aria-label="Название фонда">
+    <button class="x sm" data-act="wz-del" data-list="funds" data-i="${i}" aria-label="Удалить «${esc(r.name||'фонд')}»">${ic('x')}</button>
+    <select class="wzf-kind" data-wz-list="funds" data-i="${i}" data-field="kind" aria-label="Как фонд забирает деньги">${Object.entries(WZ_KINDS).map(([k,v])=>`<option value="${k}" ${r.kind===k?'selected':''}>${v.t}</option>`).join('')}</select>
+    <label class="wzf-amt"><input class="num" data-wz-list="funds" data-i="${i}" data-field="amount" inputmode="decimal" placeholder="${K.ph}" value="${esc(r.amount)}" aria-label="${K.t}: ${K.ph.toLowerCase()}"><span class="sfx" aria-hidden="true">${K.sfx}</span></label>
+    ${r.kind==='debt'?`<label class="wzf-rate"><span>Ставка, % годовых</span><input class="num" data-wz-list="funds" data-i="${i}" data-field="rate" inputmode="decimal" placeholder="если знаете" value="${esc(r.rate)}"></label>`:''}
+    <div class="wz-eta note" data-eta="funds-${i}"></div>
+  </div>`;
+}
 function wzBody(id){
-  const z=S.wz;
-  if(id==='intro') return z.mode==='new'?`<h2 class="gate-h">Настроим бюджет</h2>
-    <p class="muted">Каждый доход здесь раскладывается по фондам. Фонд — это конверт под одну задачу: квартира, еда, долг, подушка, награды.</p>
-    <div class="flow">${[['Обязательные платежи','квартира, еда, связь'],['Награды','немного на радости'],['Подушка и долги','закрываются по очереди'],['Накопления','всё, что осталось']].map(([a,b],i)=>`<div class="flow-step"><span class="flow-n">${i+1}</span><div><b>${a}</b><span class="note">${b}</span></div></div>`).join('<div class="flow-arrow" aria-hidden="true">↓</div>')}</div>
-    <p class="note">Деньги идут сверху вниз: пока фонд выше не заполнен, ниже ничего не попадает. Настройка займёт 3–5 минут, всё можно поменять потом.</p>`
-    :`<h2 class="gate-h">Настройка заново</h2><p class="muted">Проверим доход семьи, посмотрим, как он делится по вашим фондам, и добавим желания. Фонды и записи не изменятся.</p>`;
-  if(id==='income') return `<h2 class="gate-h">Доход семьи</h2>
+  const z=S.wz, fresh=z.mode==='new';
+  if(id==='intro') return `<h2 class="gate-h">Настройка заново</h2><p class="muted">Проверим доход семьи, посмотрим, как он делится по вашим фондам, и добавим желания. Фонды и записи не изменятся.</p>`;
+  if(id==='income') return fresh?`<h2 class="gate-h">Сколько семья получает в месяц</h2>
+    <p class="muted small">По доходу посчитаем, сколько остаётся после обязательных платежей и когда закроются цели и долги. Настройка займёт около трёх минут, всё можно поменять потом.</p>
+    <div class="field"><label for="wzInc">Доход семьи в месяц, ₽</label><input class="big" id="wzInc" data-wz="income" inputmode="decimal" placeholder="Например, 300 000" value="${esc(z.income)}"></div>
+    <div class="hint">Сложите все регулярные доходы: зарплаты, подработки, пособия. Если доход плавает, берите средний или чуть ниже: план с запасом надёжнее.</div>
+    <label class="check"><input type="checkbox" data-wz="tax.on" ${z.tax.on?'checked':''}> Налог с дохода плачу сам (самозанятый, ИП)</label>
+    <div class="field" id="wzTaxBox" ${z.tax.on?'':'hidden'}><label for="wzTaxPct">Ставка налога, %</label><input id="wzTaxPct" data-wz="tax.pct" inputmode="decimal" value="${esc(z.tax.pct)}"><span class="note">Налог будет сам откладываться в отдельный фонд с каждого дохода. С зарплаты налог уже удержал работодатель, для неё галочка не нужна.</span></div>`
+    :`<h2 class="gate-h">Доход семьи</h2>
     <div class="hint">Сложите все регулярные доходы за месяц: зарплаты, подработки, пособия. Если доход плавает, берите средний или чуть ниже: план с запасом надёжнее.</div>
-    <div class="field"><label for="wzInc">Сколько семья получает в месяц, ₽</label><input class="big" id="wzInc" data-wz="income" inputmode="decimal" placeholder="Например, 300 000" value="${esc(z.income)}"></div>
-    ${z.mode==='new'?`<label class="check"><input type="checkbox" id="wzTax" data-wz="tax.on" ${z.tax.on?'checked':''}> С дохода нужно платить налог</label>
-    <div class="field" id="wzTaxBox" ${z.tax.on?'':'hidden'}><label for="wzTaxPct">Ставка налога, %</label><input id="wzTaxPct" data-wz="tax.pct" inputmode="decimal" value="${esc(z.tax.pct)}"><span class="note">Налог будет откладываться в отдельный фонд с каждого дохода, где стоит отметка «облагается налогом».</span></div>`:''}`;
-  if(id==='monthly') return `<h2 class="gate-h">Обязательные платежи</h2>
-    <div class="hint">То, что нужно оплатить каждый месяц при любом раскладе. Эти фонды стоят в очереди первыми: пока они не заполнены, деньги дальше не идут. Обязательный платёж по кредиту тоже сюда.</div>
-    <div class="chips">${TPL_MONTHLY.filter(t=>!z.monthly.some(r=>r.name===t)).map(t=>`<button class="chip-btn" data-act="wz-tpl" data-name="${esc(t)}">+ ${esc(t)}</button>`).join('')}</div>
-    <div class="wz-list">${z.monthly.map((r,i)=>wzRow('monthly',i,r,[['name','Название'],['amount','₽ в месяц','num']])).join('')}</div>
-    <button class="btn ghost sm" data-act="wz-add" data-list="monthly">+ Свой платёж</button>`;
-  if(id==='debts') return `<h2 class="gate-h">Долги</h2>
-    <div class="hint">Кредитки, займы, долги друзьям, которые хотите закрыть. На них пойдут свободные деньги после обязательных платежей. Первый в списке закрывается первым, поэтому наверх ставьте самый дорогой по процентам. За каждый закрытый долг полагается награда: ${BONUS_PCT}% от его суммы можно потратить на себя.</div>
-    <div class="wz-list">${z.debts.length?z.debts.map((r,i)=>wzRow('debts',i,r,[['name','Название'],['amount','Осталось, ₽','num'],['deadline','Срок','date']])).join(''):'<p class="note">Долгов нет? Тогда свободные деньги сразу пойдут в накопления. Шаг можно пропустить.</p>'}</div>
-    <button class="btn ghost sm" data-act="wz-add" data-list="debts">+ Добавить долг</button>`;
-  if(id==='savings'){const M=wzMetrics();const sug=Math.max(10000,Math.round(M.monthly/2/5000)*5000);
-    return `<h2 class="gate-h">Подушка и награды</h2>
-    <div class="hint">Подушка — небольшой запас на непредвиденное, чтобы не брать в долг снова. Она стоит в очереди перед долгами. Для начала хватит суммы на 2–3 недели жизни.</div>
-    <div class="field"><label for="wzCush">Подушка безопасности, ₽</label><input id="wzCush" data-wz="cushion" inputmode="decimal" placeholder="Например, ${nf.format(sug)}" value="${esc(z.cushion)}">${M.monthly>0?`<button class="link left" data-act="wz-sug" data-v="${sug}">Подставить ${fmt(sug)}</button>`:''}</div>
-    <div class="hint">Без радостей сложно долго держать режим экономии. Небольшой процент на себя помогает не сорваться и не покупать импульсивно в кредит.</div>
-    <label class="check"><input type="checkbox" data-wz="reward.on" ${z.reward.on?'checked':''}> Откладывать на награды</label>
-    <div class="field" id="wzRwBox" ${z.reward.on?'':'hidden'}><label for="wzRw">Процент от денег, оставшихся после обязательных платежей</label><input id="wzRw" data-wz="reward.pct" inputmode="decimal" value="${esc(z.reward.pct)}"></div>
-    <div class="field"><label for="wzRest">Куда копить всё, что останется</label><input id="wzRest" data-wz="restName" value="${esc(z.restName)}"></div>`;}
+    <div class="field"><label for="wzInc">Сколько семья получает в месяц, ₽</label><input class="big" id="wzInc" data-wz="income" inputmode="decimal" placeholder="Например, 300 000" value="${esc(z.income)}"></div>`;
+  if(id==='funds'){const K=WZ_KINDS[z.kind]; const used=new Set(z.funds.map(r=>r.name.trim()));
+    return `<h2 class="gate-h">Фонды</h2>
+    <p class="muted small">Фонд — это конверт под одну задачу: квартира, еда, подушка, кредитка. Каждый доход сам разложится по фондам, вам останется записывать траты.</p>
+    <div class="eyebrow">Как фонд забирает деньги</div>
+    <div class="kgrid" role="group" aria-label="Типы фондов">${Object.entries(WZ_KINDS).map(([k,v])=>`<button class="kcard k-${k}" data-act="wz-kind" data-k="${k}" aria-pressed="${z.kind===k}"><span class="kc-e" aria-hidden="true">${v.e}</span><b>${v.t}</b><span class="kc-s">${v.s}</span></button>`).join('')}</div>
+    <div class="kmore k-${z.kind}"><p>${K.why}</p><p><b>Например,</b> ${K.ex}</p>
+      <div class="chips">${K.tpl.filter(t=>!used.has(t)).map(t=>`<button class="chip-btn" data-act="wz-tpl" data-name="${esc(t)}">+ ${esc(t)}</button>`).join('')}<button class="chip-btn own" data-act="wz-add">+ Свой фонд</button></div></div>
+    <div class="eyebrow">Ваши фонды${z.funds.length?` · ${z.funds.length}`:''}</div>
+    <div class="wz-list">${z.funds.length?z.funds.map((r,i)=>wzFundRow(r,i)).join(''):'<p class="note">Пока пусто. Выберите тип выше и нажмите на подходящий шаблон.</p>'}</div>`;}
+  if(id==='plan'){const nd=z.funds.filter(r=>r.kind==='debt'&&wzValid(r)).length;
+    return `<h2 class="gate-h">Ваш план</h2>
+    <p class="muted small">Так обычный месячный доход растечётся по фондам: сверху вниз, каждый берёт своё, остаток идёт дальше.</p>
+    <div id="wzSum"></div>
+    ${nd>=2?`<section class="block"><h2>Какой долг гасить первым</h2><div class="list strat" id="wzStrat"></div><p class="note" id="wzStratNote"></p></section>`:''}
+    <section class="card rw"><label class="check"><input type="checkbox" data-wz="reward.on" ${z.reward.on?'checked':''}> <b>Откладывать на награды</b></label>
+      <p class="note">Без радостей сложно долго держать режим экономии. Небольшая доля денег сверх обязательных платежей уходит на покупки для себя без чувства вины.</p>
+      <div class="field" id="wzRwBox" ${z.reward.on?'':'hidden'}><label for="wzRw">Процент от денег сверх обязательных платежей</label><input id="wzRw" data-wz="reward.pct" inputmode="decimal" value="${esc(z.reward.pct)}"></div>
+      <div class="note" id="wzRwLive"></div></section>
+    <section class="block"><h2>Как растечётся доход</h2><div id="wzSplit"></div><p class="note">Порядок и суммы потом меняются во вкладке «Фонды».</p></section>`;}
+  if(id==='invite'){const code=S.household&&S.household.inviteCode||'';
+    return `<h2 class="gate-h">Пригласите семью</h2>
+    <p class="muted small">Бюджет общий: доход или трату, которую внесёт один из вас, второй увидит сразу. Пересказывать, кто сколько потратил, больше не придётся.</p>
+    ${code?`<div class="field"><span class="lbl">Код приглашения</span><div class="code" id="wzCode">${esc(code)}</div></div>
+    <div class="btn-row"><button class="btn primary wide" data-act="wz-share">${ic('send')}Отправить приглашение</button><button class="btn ghost wide" data-act="wz-copy">${ic('copy')}Скопировать код</button></div>`
+    :'<div class="hint">Код появится через пару секунд. Его всегда можно найти в меню ☰ → «Семья».</div>'}
+    <div class="eyebrow">Что сделает второй человек</div>
+    <div class="flow">${[['Откроет ссылку','она придёт вместе с кодом'],['Зарегистрируется','почта и пароль'],['Выберет «Присоединиться по коду»','и увидит ваш общий бюджет']].map(([a,b],i)=>`<div class="flow-step"><span class="flow-n">${i+1}</span><div><b>${a}</b><span class="note">${b}</span></div></div>`).join('')}</div>`;}
   if(id==='queue') return `<h2 class="gate-h">Как делится доход</h2>
     <div class="hint">Так ваш обычный доход пройдёт по фондам сверху вниз. Фонд забирает сумму, которой ему не хватает, остаток идёт следующему. Порядок и суммы меняются в разделе «Фонды».</div>
     <div id="wzSplit"></div>`;
@@ -1175,49 +1239,80 @@ function wzBody(id){
   return '';
 }
 function wzLive(){
-  const z=S.wz; const id=wzSteps()[z.step]; const M=wzMetrics(); const box=$('#wzLive');
+  const z=S.wz; const id=wzSteps()[z.step]; const M=wzMetrics(); const box=$('#wzLive'); const fresh=z.mode==='new';
   const setEta=(key,html)=>{const el=document.querySelector(`[data-eta="${key}"]`);if(el)el.innerHTML=html};
   let h='';
-  if(id==='income'&&M.inc>0) h=`<div class="live">После налога остаётся <b>${fmt(M.inc*(1-M.pct/100))}</b> в месяц.</div>`;
-  if(id==='monthly'){
+  if(id==='income'&&M.inc>0){
+    if(!fresh) h=`<div class="live">После налога остаётся <b>${fmt(M.inc*(1-M.pct/100))}</b> в месяц.</div>`;
+    else if(z.tax.on&&parseAmt(z.tax.pct)>0) h=`<div class="live">После налога остаётся <b>${fmt(M.inc*(1-parseAmt(z.tax.pct)/100))}</b> в месяц.</div>`;
+  }
+  if(id==='funds'){
+    const tax=z.tax.on?parseAmt(z.tax.pct):0, otherPct=M.pct-tax;
+    const parts=[tax>0?'налога':'',otherPct>0?'процентных фондов':'',M.monthly>0?'платежей':''].filter(Boolean);
+    if(M.inc) h=`<div class="live ${M.base<0?'bad':''}">${M.monthly?`Платежи каждый месяц: <b>${fmt(M.monthly)}</b>.<br>`:''}${M.base>=0?`${parts.length?`После ${parts.join(', ').replace(/, ([^,]*)$/,' и $1')} остаётся`:'Свободно'} <b>${fmt(M.base)}</b> в месяц на цели, долги и накопления.`:`Платежи больше дохода на ${fmt(-M.base)}. Проверьте суммы или доход.`}</div>`;
     const after=M.inc*(1-M.pct/100);
-    h=`<div class="live ${M.base<0?'bad':''}">Обязательные платежи: <b>${fmt(M.monthly)}</b> в месяц.<br>${M.inc?(M.base>=0?`После них и налога остаётся <b>${fmt(M.base)}</b> на подушку, долги, награды и накопления.`:`Платежи больше дохода после налога на ${fmt(-M.base)}. Проверьте суммы или доход.`):'Укажите доход на прошлом шаге, чтобы увидеть остаток.'}</div>`;
-    if(after>0) z.monthly.forEach((r,i)=>setEta('monthly-'+i,nA(r.amount)>0?`${Math.round(nA(r.amount)/after*100)}% дохода`:''));
+    z.funds.forEach((r,i)=>{const v=parseAmt(r.amount); let t='';
+      if(i===0&&z.funds.length===1&&!(v>0)) t='Впишите сумму. Не ваш случай — удалите крестиком и выберите шаблоны выше.';
+      else if(v>0&&M.inc){const k=M.eta['d-f'+i];
+        if(r.kind==='monthly'&&after>0) t=`${Math.round(v/M.inc*100)}% дохода`;
+        else if(r.kind==='percent') t=v>100?'Процент должен быть не больше 100':`≈ ${fmt(M.inc*v/100)} с обычного месячного дохода`;
+        else if(r.kind==='goal') t=`Наберётся ${whenTxt(k)}`;
+        else if(r.kind==='debt') t=`Закроется ${whenTxt(k)} · награда ${fmt(v*BONUS_PCT/100)}`;
+      }
+      setEta('funds-'+i,esc(t));
+    });
   }
-  if(id==='debts'){
-    h=`<div class="live">Свободно для долгов: <b>${fmt(M.free)}</b> в месяц${M.rp?` (после ${nf.format(M.rp)}% на награды)`:''}.</div>`;
-    z.debts.forEach((r,i)=>{const k=M.eta['d-d'+i];const late=r.deadline&&k!=null&&shiftMonth(curMonth(),k)>r.deadline.slice(0,7);
-      setEta('debts-'+i,nA(r.amount)>0?`Закроется ${whenTxt(k)}${late?' · к сроку не успевает':''} · награда ${fmt(nA(r.amount)*BONUS_PCT/100)}`:'')});
+  if(id==='plan'){
+    const sumEl=$('#wzSum');
+    if(sumEl){
+      const debts=M.funds.filter(f=>f.kind==='debt'), goals=M.funds.filter(f=>f.kind==='goal');
+      const tiles=[['Сверх обязательных платежей',M.base>0?fmt(M.base)+' в месяц':'0 ₽']];
+      if(goals.length){const g=goals[0];tiles.push([g.name,M.eta[g.id]!=null?'наберётся '+whenTxt(M.eta[g.id]):'пока не копится'])}
+      if(debts.length){const last=Math.max(...debts.map(d=>M.eta[d.id]??Infinity));tiles.push(['Без долгов',isFinite(last)?whenTxt(last):'когда появятся свободные деньги'])}
+      else if(!goals.length) tiles.push(['В накопления',fmt(M.free)+' в месяц']);
+      sumEl.innerHTML=M.inc?`<div class="wz-sum">${tiles.map(([k,v])=>`<div class="sr"><span class="k">${esc(k)}</span><b class="v">${esc(v)}</b></div>`).join('')}</div>`:'';
+    }
+    const sp=$('#wzSplit'); if(sp) sp.innerHTML=splitHtml(M);
+    const st=$('#wzStrat');
+    if(st){
+      const list=wzDebts(), res={}; for(const k of Object.keys(STRATS)) res[k]=simulate(k,M.free,list);
+      const ok=k=>!res[k].noBudget&&!res[k].stuck&&!res[k].none;
+      const valid=Object.keys(STRATS).filter(ok); let best=null;
+      if(valid.length>1){const mi=Math.min(...valid.map(k=>res[k].interest)),mx=Math.max(...valid.map(k=>res[k].interest));if(mx-mi>=100)best=valid.find(k=>res[k].interest===mi)}
+      const desc={...Object.fromEntries(Object.entries(STRATS).map(([k,v])=>[k,v.desc])),custom:'В том порядке, в котором вы добавили долги.'};
+      const first=k=>{const o=orderDebts(list,k)[0];return o?` Первым закроется «${o.f.name}».`:''};
+      st.innerHTML=Object.keys(STRATS).map(k=>`<button class="strat-row" data-act="wz-strat" data-k="${k}" aria-pressed="${k===z.strat}"><span class="sn">${STRATS[k].name}${best===k?' <span class="chip v-good">выгоднее всего</span>':''}</span><span class="sv">${ok(k)&&res[k].interest>=1?`переплата ≈ ${fmt(res[k].interest)}`:''}</span><span class="sd">${esc(desc[k]+first(k))}</span></button>`).join('');
+      const noRate=list.filter(d=>!d.f.rateSet).length;
+      const nt=$('#wzStratNote'); if(nt) nt.textContent=noRate?`У ${noRate} ${plural(noRate,'долга','долгов','долгов')} не указана ставка, поэтому переплата посчитана неточно. Ставку можно вписать на прошлом шаге или позже, нажав на долг.`:'';
+    }
+    const rw=$('#wzRwLive'); if(rw) rw.innerHTML=z.reward.on&&M.perReward>0?`Это около <b>${fmt(M.perReward)}</b> в месяц.`:'';
   }
-  if(id==='savings') h=`<div class="live">${M.rp?`На награды: около <b>${fmt(M.perReward)}</b> в месяц.<br>`:''}${M.eta['d-c']!=null&&nA(z.cushion)>0?`Подушка наберётся ${whenTxt(M.eta['d-c'])}.`:''}</div>`;
   if(id==='wishes'){
-    h=M.perReward>0?`<div class="live">В фонд наград пойдёт около <b>${fmt(M.perReward)}</b> в месяц.</div>`:`<div class="live">${S.wz.mode==='new'?'Фонд наград выключен, поэтому сроки по желаниям не посчитать. Его можно включить на шаге «Подушка и награды».':'Сроки по желаниям считаются по фонду наград. Включите его из карточки любого желания на главной.'}</div>`;
+    h=M.perReward>0?`<div class="live">В фонд наград пойдёт около <b>${fmt(M.perReward)}</b> в месяц.</div>`:`<div class="live">Сроки по желаниям считаются по фонду наград. Включите его из карточки любого желания на главной.</div>`;
     let acc=0; z.wishes.forEach((r,i)=>{const p=nA(r.price);if(!(p>0)||!M.perReward){setEta('wishes-'+i,'');return}acc+=p;const k=Math.ceil(acc/M.perReward);setEta('wishes-'+i,`Можно купить ${whenTxt(k)} из фонда наград`)});
   }
   if(id==='queue'||id==='finish'){
-    const el=$('#wzSplit'); if(el){
-      if(!M.inc){el.innerHTML='<p class="note">Укажите доход семьи, чтобы увидеть разбивку.</p>'}
-      else{const rows=simSplit(M.funds,M.inc);
-        el.innerHTML=`<div class="list">${rows.map(({f,give})=>`<div class="row"><div class="row-main"><span class="name">${esc(f.name)}</span><span class="amt ${give?'':'muted'}">${fmt(give)}</span></div><div class="note"><span class="chip ${f.kind}">${KIND_SHORT[f.kind]||f.kind}</span>${f.kind==='debt'||(f.kind==='goal'&&!f.wishId)?`${M.eta[f.id]!=null?'закроется '+whenTxt(M.eta[f.id]):''}`:''}</div></div>`).join('')}</div>
-        <p class="note">Доход в месяц: ${fmt(M.inc)}.${M.base<0?' Обязательные платежи больше дохода: проверьте суммы.':''}</p>`;}
-    }
+    const el=$('#wzSplit'); if(el) el.innerHTML=splitHtml(M);
     if(id==='finish'){const n=S.wz.wishes.filter(r=>r.name.trim()&&nA(r.price)>0).length;h=n?`<div class="live">Желаний в списке: ${n}. Сроки по ним появятся на главной.</div>`:''}
   }
   if(box) box.innerHTML=h;
 }
-function drawWizard(){
-  const z=S.wz; const steps=wzSteps(); const id=steps[z.step]; const main=$('#main');
+function drawWizard(anim=true){
+  const z=S.wz; const steps=wzSteps(); const id=steps[z.step]; const main=$('#main'); const fresh=z.mode==='new';
   const last=z.step===steps.length-1;
   main.dataset.view='setup';
+  let foot;
+  if(id==='invite') foot=`<span></span><button class="btn ${z.sent?'primary':'ghost'}" data-act="wz-finish">${z.sent?'Готово, в приложение':'Пригласить позже'}</button>`;
+  else foot=`${z.step>0?'<button class="btn ghost" data-act="wz-back">Назад</button>':'<span></span>'}<button class="btn primary" data-act="wz-next" ${z.busy?'disabled':''}>${id==='intro'?'Начать':id==='plan'?(z.busy?'Сохраняем…':'Всё верно, дальше'):last?'Начать пользоваться':'Дальше'}</button>`;
   main.innerHTML=`<section class="wz">
-    <div class="wz-top"><span class="eyebrow">Шаг ${z.step+1} из ${steps.length}</span><div class="wz-prog"><i style="width:${((z.step+1)/steps.length*100).toFixed(1)}%"></i></div></div>
+    <div class="wz-top"><span class="eyebrow">Шаг ${z.step+1} из ${steps.length}${fresh?` · ${WZ_NAMES[id]}`:''}</span><div class="wz-prog"><i style="width:${((z.step+1)/steps.length*100).toFixed(1)}%"></i></div></div>
     <div class="wz-body">${wzBody(id)}</div>
     <div id="wzLive"></div>
     <div class="err" id="wzErr"></div>
-    <div class="wz-foot">${z.step>0?'<button class="btn ghost" data-act="wz-back">Назад</button>':'<span></span>'}<button class="btn primary" data-act="wz-next" ${z.busy?'disabled':''}>${z.step===0?'Начать':last?'Начать пользоваться':id==='debts'&&!z.debts.length?'Долгов нет, дальше':'Дальше'}</button></div>
-    ${z.step===0?`<div class="gate-links"><button class="link" data-act="wz-skip">${z.mode==='new'?'Пропустить, настрою сам':'Закрыть'}</button></div>`:''}
+    <div class="wz-foot">${foot}</div>
+    ${z.step===0?`<div class="gate-links"><button class="link" data-act="wz-skip">${fresh?'Пропустить, настрою сам':'Закрыть'}</button></div>`:''}
   </section>`;
-  main.classList.remove('enter');void main.offsetWidth;main.classList.add('enter');
+  if(anim){main.classList.remove('enter');void main.offsetWidth;main.classList.add('enter')}
   wzLive();
 }
 function wzSet(path,val){const z=S.wz;const p=path.split('.');if(p.length===2)z[p[0]][p[1]]=val;else z[p[0]]=val}
@@ -1227,39 +1322,150 @@ document.addEventListener('input',e=>{
     if(t.dataset.wz==='tax.on'){const b=$('#wzTaxBox');if(b)b.hidden=!t.checked}
     if(t.dataset.wz==='reward.on'){const b=$('#wzRwBox');if(b)b.hidden=!t.checked}
     wzLive();return}
-  if(t.dataset.wzList){S.wz[t.dataset.wzList][+t.dataset.i][t.dataset.field]=t.value;wzLive()}
+  if(t.dataset.wzList){const row=S.wz[t.dataset.wzList][+t.dataset.i]; row[t.dataset.field]=t.value;
+    if(t.dataset.field==='kind'){S.wz.kind=t.value;drawWizard(false);return}
+    if(t.dataset.wzList==='funds'&&t.dataset.field==='name'){const em=document.querySelector(`[data-emo="${t.dataset.i}"]`);if(em)em.textContent=fundEmoji({name:row.name,kind:row.kind})}
+    wzLive()}
 });
+document.addEventListener('focusout',e=>{
+  if(S.status!=='setup'||!S.wz)return; const t=e.target;
+  const isAmt=t.id==='wzInc'||(t.dataset.wzList==='funds'&&t.dataset.field==='amount'&&S.wz.funds[+t.dataset.i]?.kind!=='percent');
+  if(!isAmt)return; const n=parseAmt(t.value); if(n>0){t.value=nf.format(n);if(t.id==='wzInc')S.wz.income=t.value;else S.wz.funds[+t.dataset.i].amount=t.value}
+});
+function inviteText(code){const url=location.origin+location.pathname;return `Присоединяйся к нашему семейному бюджету в «Потоке». Открой ${url}, зарегистрируйся, выбери «Присоединиться по коду» и введи код ${code}`}
+async function copyText(t,okMsg){try{await navigator.clipboard.writeText(t);toast(okMsg);return true}catch(e){toast('Не получилось скопировать. Выделите код и скопируйте вручную.');return false}}
+async function shareInvite(code){
+  if(!code) return false; const text=inviteText(code);
+  if(navigator.share){try{await navigator.share({title:'Поток: семейный бюджет',text});return true}catch(e){if(e&&e.name==='AbortError')return false}}
+  return copyText(text,'Приглашение скопировано, отправьте его в мессенджере');
+}
 async function wzAction(act,a){
-  const z=S.wz; if(!z) return false; const steps=wzSteps(); const id=steps[z.step];
-  if(act==='wz-add'){const L=a.dataset.list;z[L].push(L==='debts'?{name:'',amount:'',deadline:''}:L==='wishes'?{name:'',price:''}:{name:'',amount:''});drawWizard();
-    const rows=document.querySelectorAll(`[data-wz-list="${L}"][data-field="name"]`);rows[rows.length-1]?.focus();return true}
-  if(act==='wz-del'){z[a.dataset.list].splice(+a.dataset.i,1);drawWizard();return true}
-  if(act==='wz-tpl'){z.monthly.push({name:a.dataset.name,amount:''});drawWizard();const r=document.querySelectorAll('[data-wz-list="monthly"][data-field="amount"]');r[r.length-1]?.focus();return true}
-  if(act==='wz-sug'){z.cushion=a.dataset.v;drawWizard();return true}
-  if(act==='wz-back'){z.step=Math.max(0,z.step-1);drawWizard();window.scrollTo(0,0);return true}
+  const z=S.wz; if(!z) return false; const steps=wzSteps(); const id=steps[z.step]; const fresh=z.mode==='new';
+  const focusLast=(sel)=>{const r=document.querySelectorAll(sel);r[r.length-1]?.focus()};
+  if(act==='wz-kind'){z.kind=a.dataset.k;drawWizard(false);return true}
+  if(act==='wz-add'){
+    if(fresh&&id==='funds'){z.funds.push({name:'',kind:z.kind,amount:'',rate:''});drawWizard(false);focusLast('[data-wz-list="funds"][data-field="name"]');return true}
+    const L=a.dataset.list;z[L].push({name:'',price:''});drawWizard(false);focusLast(`[data-wz-list="${L}"][data-field="name"]`);return true}
+  if(act==='wz-del'){z[a.dataset.list].splice(+a.dataset.i,1);drawWizard(false);return true}
+  if(act==='wz-tpl'){z.funds.push({name:a.dataset.name,kind:z.kind,amount:'',rate:''});drawWizard(false);focusLast('[data-wz-list="funds"][data-field="amount"]');return true}
+  if(act==='wz-strat'){if(STRATS[a.dataset.k]){z.strat=a.dataset.k;wzLive()}return true}
+  if(act==='wz-share'){const ok=await shareInvite(S.household&&S.household.inviteCode);if(ok&&S.wz){S.wz.sent=true;drawWizard(false)}return true}
+  if(act==='wz-copy'){const c=S.household&&S.household.inviteCode;if(c&&await copyText(c,'Код скопирован')&&S.wz){S.wz.sent=true;drawWizard(false)}return true}
+  if(act==='wz-finish'){S.wz=null;S.status='ready';S.tab='now';S.enterNext=true;render();window.scrollTo(0,0);return true}
+  if(act==='wz-back'){if(z.saved&&id==='invite')return true;z.step=Math.max(0,z.step-1);drawWizard();window.scrollTo(0,0);return true}
   if(act==='wz-skip'){
-    if(z.mode==='new') DB.setHousehold({setupDone:true});
+    if(fresh) DB.setHousehold({setupDone:true});
     S.wz=null;S.status='ready';S.enterNext=true;render();return true}
   if(act==='wz-next'){
-    if(id==='income'&&!(nA(z.income)>0)){$('#wzErr').textContent='Укажите доход семьи в месяц, по нему строится весь план.';return true}
-    if(id==='monthly'&&z.monthly.some(r=>r.name.trim()&&!(nA(r.amount)>0))){$('#wzErr').textContent='У некоторых платежей нет суммы. Укажите её или удалите строку.';return true}
-    if(id==='debts'&&z.debts.some(r=>r.name.trim()&&!(nA(r.amount)>0))){$('#wzErr').textContent='Укажите, сколько осталось погасить по каждому долгу.';return true}
+    const err=t=>{$('#wzErr').textContent=t;return true};
+    if(id==='income'&&!(nA(z.income)>0)) return err('Укажите доход семьи в месяц, по нему строится весь план.');
+    if(id==='income'&&fresh&&z.tax.on&&!(parseAmt(z.tax.pct)>0&&parseAmt(z.tax.pct)<100)) return err('Укажите ставку налога, например 6.');
+    if(id==='funds'){
+      const noAmt=z.funds.find(r=>r.name.trim()&&!(parseAmt(r.amount)>0)); if(noAmt) return err(`Укажите сумму для «${noAmt.name.trim()}» или удалите его.`);
+      if(z.funds.some(r=>!r.name.trim()&&parseAmt(r.amount)>0)) return err('У одного из фондов нет названия.');
+      const badP=z.funds.find(r=>r.kind==='percent'&&parseAmt(r.amount)>100); if(badP) return err(`У «${badP.name.trim()}» процент больше 100.`);
+      const badR=z.funds.find(r=>r.kind==='debt'&&(parseAmt(r.rate)<0||parseAmt(r.rate)>200)); if(badR) return err(`Ставка у «${badR.name.trim()}» выглядит странно: укажите процент годовых, например 29,9.`);
+      if(!z.funds.some(wzValid)) return err('Добавьте хотя бы один фонд, например квартиру или еду.');
+      z.funds=z.funds.filter(r=>r.name.trim()||parseAmt(r.amount)>0);
+      if(!z.funds.some(r=>r.kind==='debt')||z.funds.filter(r=>r.kind==='debt').length<2) z.strat=z.funds.some(r=>r.kind==='debt'&&String(r.rate||'').trim())?'avalanche':'custom';
+    }
+    if(id==='plan'&&z.reward.on&&!(parseAmt(z.reward.pct)>0&&parseAmt(z.reward.pct)<=100)) return err('Процент на награды должен быть от 1 до 100. Или снимите галочку.');
+    if(fresh&&id==='plan'){
+      z.busy=true;drawWizard(false);
+      try{
+        const at=Date.now();
+        await DB.setHousehold({expectedIncome:nA(z.income),setupDone:true,debtStrategy:z.strat});
+        if(S.household){S.household.expectedIncome=nA(z.income);S.household.setupDone=true;S.household.debtStrategy=z.strat}
+        wzFunds().forEach((f,i)=>DB.add('funds',{name:f.name,kind:f.kind,value:f.value,icon:'',start:0,taxOnly:!!f.taxOnly,deadline:'',cap:0,payDay:0,
+          rate:f.kind==='debt'?Math.round((+f.rate||0)*100)/100:0,rateSet:f.kind==='debt'&&!!f.rateSet,minPay:0,order:i+1,createdAt:at+i}));
+        z.busy=false;z.saved=true;z.step++;drawWizard();window.scrollTo(0,0);toast('План сохранён');
+      }catch(e){z.busy=false;drawWizard(false);$('#wzErr').textContent='Не получилось сохранить. Проверьте интернет и попробуйте ещё раз.'}
+      return true;
+    }
     if(z.step<steps.length-1){z.step++;drawWizard();window.scrollTo(0,0);return true}
-    z.busy=true;drawWizard();
+    // короткий режим «заново»: сохраняем доход и желания
+    z.busy=true;drawWizard(false);
     try{
       const at=Date.now();
       await DB.setHousehold({expectedIncome:nA(z.income),setupDone:true});
       if(S.household){S.household.expectedIncome=nA(z.income);S.household.setupDone=true}
-      if(z.mode==='new'){
-        wzFunds().forEach((f,i)=>{const {id,...d}=f;DB.add('funds',{...d,start:0,taxOnly:!!d.taxOnly,deadline:d.deadline||'',cap:0,order:i+1,createdAt:at+i})});
-      }
       z.wishes.filter(r=>r.name.trim()&&nA(r.price)>0).forEach((r,i)=>DB.add('wishes',{name:r.name.trim(),price:nA(r.price),fundId:'',by:S.uid||null,createdAt:at+100+i}));
       S.wz=null;S.status='ready';S.tab='now';S.enterNext=true;render();window.scrollTo(0,0);toast('Бюджет настроен');
-    }catch(err){z.busy=false;drawWizard();$('#wzErr').textContent='Не получилось сохранить. Проверьте интернет и попробуйте ещё раз.'}
+    }catch(err){z.busy=false;drawWizard(false);$('#wzErr').textContent='Не получилось сохранить. Проверьте интернет и попробуйте ещё раз.'}
     return true;
   }
   return false;
 }
+
+/* ---------- подсказки на главной ----------
+   Показываются один раз на устройстве: после настройки, тому, кто вошёл по коду,
+   и всем, кто уже пользуется. Повтор: меню ☰ → «Показать подсказки». */
+const TOUR=[
+  {sel:'main .hero',t:'Главное за месяц',d:'Сколько ещё нужно заработать, чтобы закрыть все платежи по плану. Кольцо показывает, на сколько план уже выполнен.'},
+  {sel:'main [data-act="open-income"]',t:'Пришли деньги',d:'Зарплата, подработка, пособие: жмите сюда. Деньги сами разложатся по фондам в порядке очереди.'},
+  {sel:'main [data-act="open-expense"]',t:'Потратили',d:'Запишите трату и выберите фонд, из которого ушли деньги. Остаток в фонде пересчитается сам.'},
+  {sel:'main [data-act="new-wish"]',t:'Хочу купить',d:'Добавьте желание, и приложение подскажет, когда покупка не помешает плану.'},
+  {sel:'nav.tabs .wrap',t:'Разделы',d:'«Фонды» — очередь и настройки фондов. «Долги» — план погашения и стратегия. «История» — все записи по месяцам.'},
+  {sel:'#setBtn',t:'Меню',d:'Код приглашения для семьи, обычный доход, тема и напоминания о платежах в календарь телефона.'}
+];
+const tourKey=()=>'ff-tour:'+(S.uid||'');
+let TR=null, tourWait=false;
+function maybeTour(){
+  if(TR||tourWait||S.status!=='ready'||S.tab!=='now'||!activeFunds().length||LS.get(tourKey())) return;
+  tourWait=true;
+  const go=()=>{
+    if(S.status!=='ready'||S.tab!=='now'||LS.get(tourKey())||TR){tourWait=false;return}
+    if(document.getElementById('splash')||!$('#sheet').hidden||!$('#cele').hidden){setTimeout(go,500);return}
+    tourWait=false; startTour();
+  };
+  setTimeout(go,900);
+}
+const visible=el=>el&&el.getClientRects().length>0;
+function startTour(){
+  const steps=TOUR.filter(s=>visible(document.querySelector(s.sel)));
+  if(!steps.length) return;
+  TR={steps,i:0,back:document.activeElement};
+  const el=document.createElement('div'); el.id='tour'; el.setAttribute('role','dialog'); el.setAttribute('aria-modal','true'); el.setAttribute('aria-labelledby','tourT');
+  el.innerHTML='<div class="tr-hole noanim"></div><div class="tr-tip"><span class="tr-arrow"></span><div class="tr-in"></div></div>';
+  document.body.appendChild(el);
+  tourShow();
+}
+function tourShow(){
+  const st=TR.steps[TR.i]; const target=document.querySelector(st.sel);
+  if(!visible(target)){tourNext();return}
+  const n=TR.steps.length, last=TR.i===n-1;
+  $('#tour .tr-in').innerHTML=`<div class="eyebrow">${TR.i+1} из ${n}</div><h3 id="tourT">${esc(st.t)}</h3><p>${esc(st.d)}</p><div class="tr-btns">${last?'<span></span>':'<button class="link" data-tour="skip">Пропустить</button>'}<button class="btn primary sm" data-tour="next">${last?'Понятно':'Дальше'}</button></div>`;
+  const tip=$('#tour .tr-tip'); tip.classList.remove('show');
+  const fixed=!!target.closest('nav.tabs,header.top');
+  if(!fixed){const r=target.getBoundingClientRect();const top=$('header.top').getBoundingClientRect().bottom;const bottom=innerHeight-($('nav.tabs').getBoundingClientRect().height||0);
+    if(r.top<top+12||r.bottom>bottom-12-180) target.scrollIntoView({block:'center',behavior:calm()?'auto':'smooth'})}
+  setTimeout(()=>{if(!TR)return;tourPlace();tip.classList.add('show');$('#tour [data-tour="next"]')?.focus({preventScroll:true})},fixed||calm()?30:380);
+}
+function tourPlace(){
+  if(!TR) return; const st=TR.steps[TR.i]; const target=document.querySelector(st.sel); if(!visible(target)) return;
+  const r=target.getBoundingClientRect(), pad=6, hole=$('#tour .tr-hole'), tip=$('#tour .tr-tip');
+  const rad=parseFloat(getComputedStyle(target).borderTopLeftRadius)||12;
+  Object.assign(hole.style,{left:(r.left-pad)+'px',top:(r.top-pad)+'px',width:(r.width+pad*2)+'px',height:(r.height+pad*2)+'px',borderRadius:(rad+pad)+'px'});
+  if(hole.classList.contains('noanim'))requestAnimationFrame(()=>requestAnimationFrame(()=>hole.classList.remove('noanim')));
+  const W=Math.min(340,innerWidth-32); tip.style.width=W+'px';
+  const H=tip.offsetHeight; const cx=r.left+r.width/2;
+  const left=Math.max(16,Math.min(innerWidth-16-W,cx-W/2));
+  const below=innerHeight-r.bottom-pad, above=r.top-pad;
+  const down=below>=H+20||below>=above;
+  tip.style.left=left+'px'; tip.style.top=(down?r.bottom+pad+12:r.top-pad-12-H)+'px';
+  tip.classList.toggle('up',!down);
+  tip.querySelector('.tr-arrow').style.left=Math.max(18,Math.min(W-18,cx-left))+'px';
+}
+function tourNext(){if(!TR)return;TR.i++;if(TR.i>=TR.steps.length){tourEnd();return}tourShow()}
+function tourEnd(){LS.set(tourKey(),'1');const back=TR&&TR.back;$('#tour')?.remove();TR=null;window.scrollTo({top:0,behavior:calm()?'auto':'smooth'});if(back&&back.focus)try{back.focus({preventScroll:true})}catch(e){}}
+let tourRaf=0; const tourRe=()=>{if(!TR)return;cancelAnimationFrame(tourRaf);tourRaf=requestAnimationFrame(tourPlace)};
+addEventListener('resize',tourRe); addEventListener('scroll',tourRe,{passive:true});
+document.addEventListener('click',e=>{
+  if(!TR||!e.target.closest('#tour'))return; e.preventDefault(); e.stopImmediatePropagation();
+  const b=e.target.closest('[data-tour]'); if(b&&b.dataset.tour==='skip'){tourEnd();return}
+  if(b||!e.target.closest('.tr-tip')) tourNext();
+},true);
+document.addEventListener('keydown',e=>{if(!TR)return;if(e.key==='Escape'){e.stopImmediatePropagation();tourEnd()}else if(e.key==='ArrowRight'){tourNext()}},true);
 
 /* ---------- вход и семья ---------- */
 const AUTH_ERR = {
@@ -1336,7 +1542,7 @@ function openSettings(){
   openSheet(`${sheetHead('Семья')}
   <div class="field"><label>Код приглашения</label><div class="code" id="sCode">${esc(code)}</div>
   <p class="note">Второй человек регистрируется на этом сайте, выбирает «Присоединиться по коду» и вводит этот код.</p>
-  <div class="btn-row"><button class="btn ghost" id="sCopy">Скопировать</button><button class="btn ghost" id="sNew">Новый код</button></div></div>
+  <div class="btn-row"><button class="btn primary wide" id="sShare">${ic('send')}Отправить приглашение</button><button class="btn ghost" id="sCopy">Скопировать</button><button class="btn ghost" id="sNew">Новый код</button></div></div>
   <div class="field"><label>Участники</label><div class="list">${ids.map(id=>`<div class="row"><div class="row-main"><span class="name">${esc(S.members[id]||'Без имени')}</span><span class="note">${id===S.uid?'вы':''}</span></div></div>`).join('')}</div></div>
   <div class="field"><label for="sName">Ваше имя</label><input id="sName" data-nofocus="1" value="${esc(S.members[S.uid]||S.myName||'')}"></div>
   <button class="btn ghost" id="sSaveName">Сохранить имя</button>
@@ -1345,9 +1551,11 @@ function openSettings(){
   <div class="field"><span class="lbl">Тема</span><div class="seg three">${[['auto','monitor-smartphone','Авто'],['light','sun','Светлая'],['dark','moon','Тёмная']].map(([k,i,l])=>`<button type="button" data-theme-set="${k}" aria-pressed="${curTheme()===k}">${ic(i)}${l}</button>`).join('')}</div><span class="note">«Авто» следует за настройкой телефона.</span></div>
   <div class="field"><span class="lbl">Напоминания</span><button class="btn ghost" data-act="ics">${ic('calendar-plus')}Платежи в календарь телефона</button><span class="note">Каждый платёж с указанным днём станет ежемесячным событием с напоминанием накануне. Если поменяете дни или суммы, добавьте файл заново.</span></div>
   <div class="field"><span class="lbl">Данные</span><div class="btn-row"><button class="btn ghost" data-act="export-csv">${ic('file-spreadsheet')}Записи в CSV</button><button class="btn ghost" data-act="export-json">${ic('file-braces')}Копия JSON</button></div><span class="note">CSV открывается в Excel и Google Таблицах. JSON — полная копия бюджета на случай сбоя или переезда.</span></div>
+  <button class="btn ghost" data-act="tour">${ic('lightbulb')}Показать подсказки</button>
   <button class="btn ghost" data-act="wz-restart">Пройти настройку заново</button>
   <div class="err" id="sErr"></div>
   <button class="btn danger" data-act="logout">Выйти из аккаунта</button>`,()=>{
+    $('#sShare').addEventListener('click',()=>shareInvite($('#sCode').textContent.trim()));
     $('#sCopy').addEventListener('click',async()=>{const c=$('#sCode').textContent;try{await navigator.clipboard.writeText(c);toast('Код скопирован')}catch(e){const r=document.createRange();r.selectNodeContents($('#sCode'));const s=getSelection();s.removeAllRanges();s.addRange(r)}});
     const nb=$('#sNew');let armed=false;nb.addEventListener('click',async()=>{
       if(!armed){armed=true;nb.textContent='Старый код перестанет работать. Нажмите ещё раз';setTimeout(()=>{armed=false;if(nb.isConnected)nb.textContent='Новый код'},4000);return}
