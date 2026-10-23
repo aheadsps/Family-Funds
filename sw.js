@@ -1,6 +1,6 @@
 // Офлайн-режим: файлы сайта берутся из сети, а без сети из кэша.
 // Библиотеки Firebase кэшируются навсегда (их адрес содержит версию).
-const CACHE = 'family-funds-v3';
+const CACHE = 'family-funds-v4';
 const SHELL = ['./', './index.html', './app.js', './fb.js', './firebase-config.js', './seed.js',
   './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 const FB = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js']

@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Семейные фонды</title>
 <meta name="description" content="Семейный бюджет: доходы раскладываются по фондам, траты списываются, подсказки по покупкам.">
 <meta name="theme-color" content="#edf1ef" media="(prefers-color-scheme: light)">
@@ -38,7 +38,10 @@
 
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
-button,input,select{font:inherit;color:inherit}
+button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{font-size:16px!important}
+html{touch-action:manipulation}
+body{overflow-x:hidden}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -248,6 +251,7 @@ nav.tabs button[aria-current="page"]{background:none}
   @keyframes toast{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
 }
 </style>
+<script>['gesturestart','gesturechange','gestureend'].forEach(function(e){document.addEventListener(e,function(ev){ev.preventDefault()})});var _t=0;document.addEventListener('touchend',function(ev){var n=Date.now();if(n-_t<350)ev.preventDefault();_t=n},{passive:false});</script>
 </head>
 <body>
 <header class="top"><div class="wrap top-in">
