@@ -1,7 +1,7 @@
 // Офлайн-режим: файлы сайта берутся из сети, а без сети из кэша.
 // Библиотеки Firebase кэшируются навсегда (их адрес содержит версию).
-const CACHE = 'potok-v7';
-const SHELL = ['./', './index.html', './app.js', './icons.js', './fb.js', './firebase-config.js', './seed.js', './marck-script.woff',
+const CACHE = 'potok-v8';
+const SHELL = ['./', './index.html', './app.js', './icons.js', './fb.js', './firebase-config.js', './seed.js', './unbounded.woff',
   './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 const FB = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js']
   .map(f => 'https://www.gstatic.com/firebasejs/10.12.2/' + f);

@@ -11,22 +11,29 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Поток">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait)" href="splash/s-750x1334.png">
+<link rel="apple-touch-startup-image" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1170x2532.png">
+<link rel="apple-touch-startup-image" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1179x2556.png">
+<link rel="apple-touch-startup-image" media="(device-width:428px) and (device-height:926px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1284x2778.png">
+<link rel="apple-touch-startup-image" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1290x2796.png">
+<link rel="apple-touch-startup-image" media="(device-width:402px) and (device-height:874px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1206x2622.png">
+<link rel="apple-touch-startup-image" media="(device-width:440px) and (device-height:956px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1320x2868.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
-<link rel="preload" href="marck-script.woff" as="font" type="font/woff" crossorigin>
+<link rel="preload" href="unbounded.woff" as="font" type="font/woff" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap">
 <script>
 /* Тема до первой отрисовки, чтобы не мигало: auto | light | dark */
 (function(){try{var t=localStorage.getItem('ff-theme');if(t==='light'||t==='dark'){document.documentElement.dataset.theme=t;var c=t==='dark'?'#0A1520':'#F1F6FA';document.querySelectorAll('meta[name=theme-color]').forEach(function(m){m.content=c})}}catch(e){}})();
 </script>
 <style>
-/* «Поток»: водная гамма (синий, голубой, бирюзовый), солнечный акцент для наград, каллиграфия для заголовков.
+/* «Поток»: технологичная вода. Знак — стеклянная сфера с уровнем жидкости, надпись Unbounded строчными.
    Раньше: «Тёплый поток»: тёплая основа, цвет по типу фонда, русло очереди, праздник за прогресс.
    Layout: одна колонка, шапка, четыре вкладки внизу, шторки для ввода. */
-@font-face{font-family:"Marck Script";src:url(marck-script.woff) format("woff");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Unbounded";src:url(unbounded.woff) format("woff");font-weight:500 700;font-style:normal;font-display:swap}
 :root{
   --bg:#F1F6FA; --surface:#FFFFFF; --surface-2:#E2ECF4; --surface-3:#D3E0EA; --sheet:#FFFFFF; --field:#F1F6FA;
   --ink:#0F2233; --muted:#566878; --line:#D3E0EA; --glow:rgba(77,148,230,.13);
@@ -43,7 +50,6 @@
   --sheet-shadow:0 -10px 30px rgba(15,34,51,.18); --btn-shadow:0 1px 2px rgba(15,34,51,.08);
   --toast-bg:#0F2233; --toast-ink:#F1F6FA; --toast-act:#8CC8F5;
   --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
-  --f-script:"Marck Script","Segoe Script","Snell Roundhand",cursive;
   --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
   --r:16px; --r-sm:12px;
 }
@@ -59,7 +65,7 @@
   --bad:#F2867C; --bad-soft:#3E1F1C;
   --good:#58CFD4; --good-soft:#10343A;
   --graphite:#93A9BC; --graphite-soft:#1B2A38;
-  --scrim:rgba(0,0,0,.62); --card-shadow:none; --sheet-shadow:0 -1px 0 var(--line); --btn-shadow:none; --btn-bg:var(--surface-2);
+  --scrim:rgba(0,0,0,.62); --card-shadow:none; --sheet-shadow:0 -1px 0 var(--line); --btn-shadow:none; --btn-bg:var(--surface-2); --mark-ring:0 0 0 1px rgba(160,200,255,.16);
   --toast-bg:#E6EFF6; --toast-ink:#0A1520; --toast-act:#1D5FA6;
   color-scheme:dark}}
 :root[data-theme="dark"]{
@@ -74,7 +80,7 @@
   --bad:#F2867C; --bad-soft:#3E1F1C;
   --good:#58CFD4; --good-soft:#10343A;
   --graphite:#93A9BC; --graphite-soft:#1B2A38;
-  --scrim:rgba(0,0,0,.62); --card-shadow:none; --sheet-shadow:0 -1px 0 var(--line); --btn-shadow:none; --btn-bg:var(--surface-2);
+  --scrim:rgba(0,0,0,.62); --card-shadow:none; --sheet-shadow:0 -1px 0 var(--line); --btn-shadow:none; --btn-bg:var(--surface-2); --mark-ring:0 0 0 1px rgba(160,200,255,.16);
   --toast-bg:#E6EFF6; --toast-ink:#0A1520; --toast-act:#1D5FA6;
   color-scheme:dark}
 
@@ -102,7 +108,11 @@ img{max-width:100%}
 header.top{position:sticky;top:0;padding-top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
 .top-in{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:10px}
 .eyebrow{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600}
-h1{font-family:var(--f-script);font-weight:400;font-size:32px;line-height:1;margin:0;letter-spacing:0;color:var(--accent)}
+.brand{display:flex;align-items:center;gap:11px;min-width:0}
+.brand-mark{width:40px;height:40px;flex:none;display:block;border-radius:10px;box-shadow:var(--mark-ring,0 4px 12px rgba(10,30,70,.22))}
+h1.brand-name{font-family:var(--f-display);font-weight:600;font-size:21px;line-height:1;margin:0;letter-spacing:-.02em;color:var(--ink)}
+.brand-tag{font-size:12.5px;line-height:1.2;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (prefers-reduced-motion:no-preference){.brand-wave{animation:spWave 4s linear infinite}}
 h2{font-weight:600;font-size:17px;margin:0;letter-spacing:-.005em}
 h3{font-weight:600;font-size:15px;margin:0}
 main{padding-block:16px calc(104px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:22px}
@@ -322,7 +332,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .hdr-btns{display:flex;gap:8px;align-items:center}
 .icon-btn{width:40px;height:40px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);display:grid;place-items:center}
 .gate{display:flex;flex-direction:column;gap:16px;padding-top:8px}
-.gate-h{font-family:var(--f-script);font-weight:400;font-size:34px;line-height:1.1;margin:4px 0 6px;letter-spacing:0}
+.gate-h{font-family:var(--f-display);font-weight:600;font-size:23px;line-height:1.2;margin:4px 0 6px;letter-spacing:-.01em}
 .gate-form{padding:16px;display:flex;flex-direction:column;gap:12px}
 .gate-links{display:flex;flex-wrap:wrap;gap:16px;justify-content:center}
 .code{font-weight:700;font-size:26px;letter-spacing:.12em;padding:12px 14px;border-radius:var(--r-sm);background:var(--accent-soft);color:var(--accent);user-select:all;-webkit-user-select:all}
@@ -360,7 +370,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .cele{position:fixed;inset:0;z-index:40;background:radial-gradient(120% 70% at 50% 30%,var(--reward-soft),var(--bg) 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px 24px calc(32px + env(safe-area-inset-bottom,0px));text-align:center}
 .cele canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .cele .ce-in{position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;max-width:380px}
-.stamp{font-family:var(--f-script);font-weight:400;font-size:clamp(30px,9.5vw,42px);line-height:1.15;letter-spacing:.02em;color:var(--reward-ink);border:4px solid currentColor;border-radius:16px;padding:8px 18px;transform:rotate(-7deg);margin:4px 0 14px}
+.stamp{font-family:var(--f-display);font-weight:700;font-size:clamp(26px,8.5vw,38px);line-height:1.15;letter-spacing:.04em;text-transform:uppercase;color:var(--reward-ink);border:4px solid currentColor;border-radius:16px;padding:8px 18px;transform:rotate(-7deg);margin:4px 0 14px}
 .cele .ce-emoji{font-size:44px;line-height:1}
 .cele .ce-title{font-size:20px;font-weight:700;margin:0}
 .cele .ce-sub{color:var(--muted);margin:0}
@@ -399,40 +409,63 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
   @keyframes stamp{from{opacity:0;transform:rotate(-7deg) scale(2.2)}to{opacity:1;transform:rotate(-7deg) scale(1)}}
 }
 
-/* заставка: капля падает в воду, круги и волны несут надпись */
-#splash{position:fixed;inset:0;z-index:100;display:grid;place-items:center;overflow:hidden;color:#EAF4FC;background:radial-gradient(120% 80% at 50% 28%,#1C5C9C 0%,#0F3A6B 46%,#071A30 100%);transition:opacity .5s ease,visibility .5s}
+/* заставка «Уровень»: стеклянная сфера, жидкость поднимается, проявляется надпись */
+#splash{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;padding-bottom:4vh;background:radial-gradient(90% 60% at 50% 42%,#0E2152 0%,#070F26 55%,#04081A 100%);transition:opacity .5s ease,visibility .5s}
 #splash.out{opacity:0;visibility:hidden;pointer-events:none}
-.sp-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(190,222,248,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(190,222,248,.08) 1px,transparent 1px);background-size:28px 28px;-webkit-mask-image:radial-gradient(70% 55% at 50% 46%,#000 15%,transparent 78%);mask-image:radial-gradient(70% 55% at 50% 46%,#000 15%,transparent 78%)}
-.sp-stage{position:relative;width:min(340px,88vw);aspect-ratio:320/300}
-.sp-svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-.sp-word{position:absolute;left:0;right:0;top:14%;text-align:center;font-family:var(--f-script);font-size:clamp(76px,25vw,96px);line-height:1.05;color:#EAF4FC;text-shadow:0 0 34px rgba(109,181,240,.42);clip-path:inset(-10% 0 -10% 0)}
-.sp-sub{position:absolute;left:0;right:0;bottom:4%;text-align:center;font:600 12px/1 var(--f-body);letter-spacing:.32em;text-transform:uppercase;color:rgba(234,244,252,.66)}
-.sp-w{fill:none;stroke-linecap:round}
-.sp-drop{fill:#F0AE5E;opacity:0}
-.sp-ring{fill:none;stroke:#BFE1FA;stroke-width:1.5;vector-effect:non-scaling-stroke;opacity:0;transform-box:fill-box;transform-origin:center}
+.sp-mark{width:136px;height:136px;display:block;overflow:visible}
+.sp-word{margin-top:30px;font-family:var(--f-display);font-weight:600;font-size:36px;line-height:1;letter-spacing:-.02em;color:#EAF4FC}
+.sp-tag{margin-top:14px;font:500 15px/1.3 var(--f-body);color:rgba(234,244,252,.62);letter-spacing:.01em}
+.sp-rim,.sp-hi{transform-box:fill-box;transform-origin:center}
 @media (prefers-reduced-motion:no-preference){
-  .sp-grid{animation:spFade 1s .05s backwards}
-  .sp-drop{animation:spDrop .62s .2s cubic-bezier(.5,0,.9,.45) both}
-  .sp-ring{animation:spRing 1.25s .8s ease-out backwards}
-  .sp-ring.r2{animation-delay:.98s}
-  .sp-w{stroke-dasharray:1;animation:spDraw 1.1s .85s cubic-bezier(.45,.05,.2,1) backwards}
-  .sp-w.w2{animation-delay:1s}.sp-w.w3{animation-delay:1.15s}
-  .sp-word{animation:spWord 1s .9s cubic-bezier(.6,.05,.25,1) backwards}
-  .sp-sub{animation:spFade .8s 1.7s backwards}
-  .sp-flow{animation:spFlow 4s ease-in-out 2s infinite}
-  @keyframes spFade{from{opacity:0}}
-  @keyframes spDrop{0%{transform:translateY(-230px);opacity:0}12%{opacity:1}86%{transform:translateY(0);opacity:1}100%{transform:translateY(8px) scale(.2);opacity:0}}
-  @keyframes spRing{0%{transform:scale(.2);opacity:.9}100%{transform:scale(16);opacity:0}}
-  @keyframes spDraw{0%{stroke-dashoffset:1;opacity:0}3%{opacity:1}100%{stroke-dashoffset:0;opacity:1}}
-  @keyframes spWord{from{clip-path:inset(-10% 100% -10% 0)}}
-  @keyframes spFlow{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+  .sp-rim{animation:spRim .8s cubic-bezier(.2,.8,.2,1) backwards}
+  .sp-liq{animation:spRise 1.3s .3s cubic-bezier(.3,.7,.2,1) backwards}
+  .sp-wave{animation:spWave 2.2s linear infinite}
+  .sp-glow{animation:spFade 1.1s .7s backwards}
+  .sp-hi{animation:spFade .7s 1.05s backwards}
+  .sp-word{animation:spUp .8s 1s cubic-bezier(.2,.8,.2,1) backwards}
+  .sp-tag{animation:spUp .8s 1.25s cubic-bezier(.2,.8,.2,1) backwards}
 }
+@keyframes spRim{from{opacity:0;transform:scale(.82)}}
+@keyframes spRise{from{transform:translateY(40px)}}
+@keyframes spWave{from{transform:translateX(-50px)}to{transform:translateX(0)}}
+@keyframes spFade{from{opacity:0}}
+@keyframes spUp{from{opacity:0;transform:translateY(10px)}}
 </style>
 <script>['gesturestart','gesturechange','gestureend'].forEach(function(e){document.addEventListener(e,function(ev){ev.preventDefault()})});var _t=0;document.addEventListener('touchend',function(ev){if(ev.target.closest&&ev.target.closest('input,select,textarea'))return;var n=Date.now();if(n-_t<350)ev.preventDefault();_t=n},{passive:false});</script>
 </head>
 <body>
+<div id="splash" aria-hidden="true">
+  <svg class="sp-mark" viewBox="0 0 100 100" focusable="false">
+    <defs>
+      <linearGradient id="spLq" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6FE6FF"/><stop offset="1" stop-color="#2F55FF"/></linearGradient>
+      <clipPath id="spClip"><circle cx="50" cy="50" r="40"/></clipPath>
+      <filter id="spBl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8"/></filter>
+    </defs>
+    <ellipse class="sp-glow" cx="50" cy="78" rx="34" ry="12" fill="#3A7BFF" opacity=".55" filter="url(#spBl)"/>
+    <g clip-path="url(#spClip)"><g class="sp-liq"><path class="sp-wave" fill="url(#spLq)" d="M-50 56 q12.5 -5 25 0 t25 0 t25 0 t25 0 t25 0 t25 0 t25 0 t25 0 V110 H-50Z"/></g></g>
+    <circle class="sp-rim" cx="50" cy="50" r="40" fill="#fff" fill-opacity=".05" stroke="#BFEFFF" stroke-opacity=".55" stroke-width="1.4"/>
+    <path class="sp-hi" d="M26 36 A28 28 0 0 1 48 22" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="3" stroke-linecap="round"/>
+  </svg>
+  <div class="sp-word">поток</div>
+  <div class="sp-tag">Твой семейный финансист</div>
+</div>
 <header class="top"><div class="wrap top-in">
-  <div><div class="eyebrow" id="monthLbl">&nbsp;</div><h1>Поток</h1></div>
+  <div class="brand">
+  <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="hdBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E1E48"/><stop offset="1" stop-color="#060C20"/></linearGradient>
+      <linearGradient id="hdLq" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6FE6FF"/><stop offset="1" stop-color="#2F55FF"/></linearGradient>
+      <clipPath id="hdClip"><circle cx="50" cy="50" r="27"/></clipPath>
+    </defs>
+    <rect width="100" height="100" rx="22.5" fill="url(#hdBg)"/>
+    <circle cx="50" cy="50" r="27" fill="#fff" fill-opacity=".07"/>
+    <g clip-path="url(#hdClip)"><path class="brand-wave" fill="url(#hdLq)" d="M-50 54 q12.5 -4 25 0 t25 0 t25 0 t25 0 t25 0 t25 0 t25 0 t25 0 V100 H-50Z"/></g>
+    <circle cx="50" cy="50" r="27" fill="none" stroke="#BFEFFF" stroke-opacity=".55" stroke-width="2.4"/>
+    <path d="M34 38 A19 19 0 0 1 49 30" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="3.4" stroke-linecap="round"/>
+  </svg>
+    <div style="min-width:0"><h1 class="brand-name">поток</h1><div class="brand-tag">Управляй своими деньгами</div></div>
+    <span id="monthLbl" hidden></span>
+  </div>
   <div class="hdr-btns">
     <button class="icon-btn" id="setBtn" data-act="settings" aria-label="Семья и настройки" hidden></button>
   </div>
@@ -460,7 +493,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 (function(){var el=document.getElementById('splash');if(!el)return;var calm=false,seen=false;
 try{calm=matchMedia('(prefers-reduced-motion: reduce)').matches;seen=sessionStorage.getItem('potok-splash')==='1';sessionStorage.setItem('potok-splash','1')}catch(e){}
 if(seen){el.remove();return}
-var t0=Date.now(),min=calm?600:2300,done=false;
+var t0=Date.now(),min=calm?700:2400,done=false;
 function hide(){if(done)return;done=true;el.classList.add('out');setTimeout(function(){el.remove()},650)}
 el.addEventListener('click',hide);
 (function tick(){var n=Date.now()-t0;if(n>=5000||(n>=min&&document.body.dataset.ready))hide();else setTimeout(tick,100)})();

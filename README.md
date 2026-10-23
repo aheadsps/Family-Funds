@@ -41,7 +41,7 @@
 
 ## Файлы
 - `index.html`, `app.js` — интерфейс и расчёты
-- `marck-script.woff` — каллиграфический шрифт Marck Script (лицензия OFL, файл marck-script-OFL.txt), только кириллица и латиница.
+- `unbounded.woff` — шрифт Unbounded для логотипа и заголовков (лицензия OFL, файл unbounded-OFL.txt), только кириллица и латиница.
 - `splash/` — статичные заставки для iPhone, `icons.js` — иконки интерфейса (Lucide, встроены для работы без сети)
 - `fb.js` — работа с Firebase
 - `firebase-config.js` — ключи проекта
