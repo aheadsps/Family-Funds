@@ -187,6 +187,66 @@ body{margin:0;min-height:100vh;min-height:100dvh}
 .wish-box{display:flex;flex-direction:column;gap:10px}
 .wish-box .tip{background:var(--bg)}
 #exHint p{margin:0 0 4px}
+/* вкладки */
+nav.tabs .wrap{position:relative}
+nav.tabs button{position:relative;z-index:1;transition:color .2s}
+nav.tabs button[aria-current="page"]{background:none}
+.tab-ind{position:absolute;left:0;top:6px;bottom:6px;width:0;border-radius:10px;background:var(--accent-soft);transition:transform .32s cubic-bezier(.3,.8,.25,1),width .32s cubic-bezier(.3,.8,.25,1)}
+.tab-ind.noanim{transition:none}
+/* мастер настройки */
+.wz{display:flex;flex-direction:column;gap:16px;padding-bottom:8px}
+.wz-top{display:flex;flex-direction:column;gap:8px}
+.wz-prog{height:4px;border-radius:2px;background:var(--surface-2);overflow:hidden}
+.wz-prog i{display:block;height:100%;background:var(--accent);border-radius:2px;transition:width .4s cubic-bezier(.3,.8,.25,1)}
+.wz-body{display:flex;flex-direction:column;gap:14px}
+.wz-body .gate-h{margin:0}
+.hint{background:var(--accent-soft);color:var(--ink);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.5}
+.live{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.55}
+.live.bad{border-color:var(--bad);background:var(--bad-soft)}
+.wz-list{display:flex;flex-direction:column;gap:10px}
+.wz-row{display:grid;grid-template-columns:1fr 116px 36px;gap:8px;align-items:center}
+.wz-row input{width:100%;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.wz-row input.num{text-align:right}
+.wz-row input.date{grid-column:1/3;grid-row:2}
+.wz-row .x{grid-column:3;grid-row:1}
+.wz-eta{grid-column:1/-1;min-height:0}
+.wz-eta:empty{display:none}
+.x.sm{width:36px;height:36px;font-size:16px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip-btn{border:1px dashed var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;font-size:13px;font-weight:500;color:var(--muted)}
+.chip-btn:hover{color:var(--accent);border-color:var(--accent)}
+.flow{display:flex;flex-direction:column;gap:2px}
+.flow-step{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.flow-step b{display:block;font-weight:600}
+.flow-n{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-family:var(--f-display);font-size:13px}
+.flow-arrow{text-align:center;color:var(--muted);font-size:13px;line-height:1.2}
+.wz-foot{position:sticky;bottom:0;display:grid;grid-template-columns:1fr 2fr;gap:10px;padding-block:12px calc(12px + env(safe-area-inset-bottom,0px));background:var(--bg)}
+.link.left{align-self:flex-start;padding-left:0}
+.chip.v-later{background:var(--surface-2);color:var(--muted)}
+.chip.v-soon{background:var(--accent-soft);color:var(--accent)}
+.row.wish > span:last-child{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
+/* анимации */
+.btn,.chip-btn,.icon-btn{transition:transform .12s ease,background-color .2s,opacity .2s}
+.btn:active:not(:disabled),.chip-btn:active,.icon-btn:active{transform:scale(.97)}
+.bar i{transition:width .5s cubic-bezier(.3,.8,.25,1)}
+@media (prefers-reduced-motion: no-preference){
+  main.enter > *{animation:rise .34s cubic-bezier(.25,.8,.25,1) both}
+  main.enter > *:nth-child(2){animation-delay:.04s} main.enter > *:nth-child(3){animation-delay:.08s}
+  main.enter > *:nth-child(4){animation-delay:.12s} main.enter > *:nth-child(n+5){animation-delay:.16s}
+  main.enter .bar i{animation:grow .8s cubic-bezier(.25,.8,.25,1) .12s both}
+  main.enter .wz-body,main.enter #wzLive{animation:slide .3s cubic-bezier(.25,.8,.25,1) both}
+  .sheet.closing{animation:down .18s ease-in forwards}
+  .scrim{animation:fade .2s ease-out}
+  .scrim.closing{animation:fadeout .18s ease-in forwards}
+  .toast.show{animation:toast .24s cubic-bezier(.25,.8,.25,1)}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  @keyframes slide{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+  @keyframes grow{from{width:0}}
+  @keyframes down{to{transform:translateY(40px);opacity:0}}
+  @keyframes fade{from{opacity:0}}
+  @keyframes fadeout{to{opacity:0}}
+  @keyframes toast{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
+}
 </style>
 </head>
 <body>
@@ -202,6 +262,7 @@ body{margin:0;min-height:100vh;min-height:100dvh}
 </main>
 
 <nav class="tabs" aria-label="Разделы" hidden><div class="wrap">
+  <span class="tab-ind" id="tabInd" aria-hidden="true"></span>
   <button data-tab="now" aria-current="page">Сейчас</button>
   <button data-tab="funds">Фонды</button>
   <button data-tab="hist">История</button>

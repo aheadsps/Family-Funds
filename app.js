@@ -251,16 +251,34 @@ function render(){
   const main=$('#main');
   document.querySelector('nav.tabs').hidden=S.status!=='ready';
   $('#setBtn').hidden=S.status!=='ready';
-  if(S.status!=='ready'){renderGate(main);return}
+  if(S.status==='setup'){if(main.dataset.view!=='setup'||S.enterNext){S.enterNext=false;drawWizard()}return}
+  if(S.status!=='ready'){main.dataset.view='gate';renderGate(main);return}
   let html='';
   if(!S.canWrite) html+=`<div class="ro">У вас доступ только для просмотра. Чтобы вносить записи, владелец должен выдать права на изменение.</div>`;
   if(S.tab==='now') html+=renderNow();
   else if(S.tab==='funds') html+=renderFunds();
   else html+=renderHist();
-  main.innerHTML=html;
+  main.innerHTML=html; main.dataset.view=S.tab;
+  main.classList.remove('enter');
+  if(S.enterNext){S.enterNext=false;void main.offsetWidth;main.classList.add('enter');countUp(main)}
+  moveTabInd();
   resolveNames();
   if(S.sheetRefresh&&!$('#sheet').hidden)S.sheetRefresh();
 }
+const calm=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+function moveTabInd(){
+  const ind=$('#tabInd'); const b=document.querySelector('nav.tabs button[aria-current="page"]'); if(!ind||!b||!b.offsetWidth)return;
+  const first=!ind.style.width; if(first)ind.classList.add('noanim');
+  ind.style.width=b.offsetWidth+'px'; ind.style.transform=`translateX(${b.offsetLeft}px)`;
+  if(first)requestAnimationFrame(()=>requestAnimationFrame(()=>ind.classList.remove('noanim')));
+}
+addEventListener('resize',()=>moveTabInd());
+function countUp(root){
+  if(calm())return;
+  root.querySelectorAll('[data-count]').forEach(el=>{const to=+el.dataset.count||0,t0=performance.now(),d=550;
+    const step=t=>{const k=Math.min(1,(t-t0)/d),e=1-Math.pow(1-k,3);el.textContent=fmt(to*e);if(k<1&&el.isConnected)requestAnimationFrame(step)};requestAnimationFrame(step)});
+}
+let rT; function renderSoon(){clearTimeout(rT);rT=setTimeout(render,30)}
 function emptyFunds(){
   return `<div class="empty"><h2>Фондов пока нет</h2><p class="muted small">Фонд — это конверт для денег: налоги, квартира, кредитка, подушка. Добавьте первый, и каждый доход будет раскладываться по ним автоматически.</p>${S.canWrite?'<button class="btn primary" data-act="new-fund">Добавить фонд</button>':''}</div>`;
 }
@@ -269,16 +287,16 @@ function renderNow(){
   const P=monthPicture(); const mi=P.mi;
   let h=`<section class="hero">`;
   if(P.stillNet>0.5){
-    h+=`<div class="eyebrow">Ещё нужно заработать в ${PREP[mi]}</div><div class="fig">${fmt(P.stillGross)}</div>
+    h+=`<div class="eyebrow">Ещё нужно заработать в ${PREP[mi]}</div><div class="fig" data-count="${Math.round(P.stillGross)}">${fmt(P.stillGross)}</div>
     <div class="muted small">Столько дохода закроет ежемесячные платежи${P.dl.length?' и план по срокам':''}${P.pct?`, с учётом ${nf.format(P.pct)}% в процентные фонды`:''}.</div>`;
   } else {
     h+=`<div class="eyebrow">${NOM[mi]}</div><div class="fig ok">План месяца выполнен</div><div class="muted small">Дальнейший доход пойдёт в накопления по очереди фондов.</div>`;
   }
   h+=`<div class="hero-split"><div class="kv"><div class="k">Доход в ${PREP[mi]}</div><div class="v">${fmt(P.incomeM)}</div></div><div class="kv"><div class="k">Траты в ${PREP[mi]}</div><div class="v">${fmt(P.spentM)}</div></div></div></section>`;
   if(S.canWrite) h+=`<div class="btn-row"><button class="btn primary" data-act="open-income">Пришли деньги</button><button class="btn ghost" data-act="open-expense">Потратили</button><button class="btn ghost wide" data-act="new-wish">Хочу купить…</button></div>`;
-  const T=tips(P);
-  if(T.length) h+=`<section class="block"><h2>Что делать сейчас</h2><div class="tips">${T.map(t=>`<div class="tip ${t.tone}"><span class="dot"></span><div><b>${esc(t.title)}</b><span class="muted small">${esc(t.text)}</span>${t.act&&S.canWrite?`<div style="margin-top:8px"><button class="btn sm ghost" data-act="${t.act.act}">${esc(t.act.label)}</button></div>`:''}</div></div>`).join('')}</div></section>`;
-  if(S.wishes.length) h+=`<section class="block"><h2>Хочу купить</h2><div class="list">${S.wishes.map(w=>{const v=analyzeWish(+w.price||0,w.fundId||'',w.id);return `<button class="row wish" data-act="edit-wish" data-id="${esc(w.id)}" ${S.canWrite?'':'disabled'}><span class="row-main"><span class="name">${esc(w.name||'Без названия')}</span><span class="amt">${fmt(w.price)}</span></span><span>${v?`<span class="chip v-${v.tone}">${VSHORT[v.tone]}</span>`:''}</span></button>`}).join('')}</div></section>`;
+  const T=tips(P); T.splice(Math.min(1,T.length),0,...wishTips());
+  if(T.length) h+=`<section class="block"><h2>Что делать сейчас</h2><div class="tips">${T.map(t=>`<div class="tip ${t.tone}"><span class="dot"></span><div><b>${esc(t.title)}</b><span class="muted small">${esc(t.text)}</span>${t.act&&S.canWrite?`<div style="margin-top:8px"><button class="btn sm ghost" data-act="${t.act.act}" ${t.act.id?`data-id="${esc(t.act.id)}"`:''}>${esc(t.act.label)}</button></div>`:''}</div></div>`).join('')}</div></section>`;
+  if(S.wishes.length) h+=`<section class="block"><h2>Хочу купить</h2><div class="list">${S.wishes.map(w=>{const fc=wishForecast(w);return `<button class="row wish" data-act="edit-wish" data-id="${esc(w.id)}" ${S.canWrite?'':'disabled'}><span class="row-main"><span class="name">${esc(w.name||'Без названия')}</span><span class="amt">${fmt(w.price)}</span></span><span>${fc?`<span class="chip v-${fc.tone}">${esc(fc.text)}</span>${fc.how&&!fc.now?`<span class="note"> ${esc(fc.how)}</span>`:''}`:''}</span></button>`}).join('')}</div></section>`;
   h+=`<section class="block"><div class="sec-head"><h2>Фонды</h2><button class="btn sm ghost" data-tab-go="funds">Настроить</button></div><div class="list">${activeFunds().map(f=>fundRowNow(f,P.get,mi)).join('')}</div></section>`;
   return h;
 }
@@ -339,11 +357,18 @@ function renderHist(){
 function resolveNames(){document.querySelectorAll('[data-who]').forEach(el=>{el.textContent=S.names[el.dataset.who]||''})}
 
 /* ---------- sheets ---------- */
+let sheetT;
 function openSheet(html,onMount){
-  const sh=$('#sheet'); sh.innerHTML=`<div class="wrap">${html}</div>`; sh.hidden=false; $('#scrim').hidden=false;
+  clearTimeout(sheetT); $('#scrim').classList.remove('closing');
+  const sh=$('#sheet'); sh.classList.remove('closing'); sh.innerHTML=`<div class="wrap">${html}</div>`; sh.hidden=false; $('#scrim').hidden=false;
   onMount&&onMount(sh); const f=sh.querySelector('input.big,input'); f&&setTimeout(()=>f.focus(),60);
 }
-function closeSheet(){S.sheetRefresh=null;$('#sheet').hidden=true;$('#scrim').hidden=true;$('#sheet').innerHTML=''}
+function closeSheet(){
+  S.sheetRefresh=null; const sh=$('#sheet'), sc=$('#scrim'); if(sh.hidden)return;
+  const done=()=>{sh.classList.remove('closing');sc.classList.remove('closing');sh.hidden=true;sc.hidden=true;sh.innerHTML=''};
+  if(calm()){done();return}
+  sh.classList.add('closing');sc.classList.add('closing');clearTimeout(sheetT);sheetT=setTimeout(done,180);
+}
 function sheetHead(t){return `<div class="sheet-head"><h2>${t}</h2><button class="x" data-act="close" aria-label="Закрыть">×</button></div>`}
 function typeSeg(active){return `<div class="seg"><button data-act="open-income" aria-pressed="${active==='income'}">Доход</button><button data-act="open-expense" aria-pressed="${active==='expense'}">Трата</button></div>`}
 
@@ -579,16 +604,18 @@ async function moveFund(id,d){
   catch(e){toast('Не получилось изменить порядок.')}
 }
 let toastT;
-function toast(t){const el=$('#toast');el.textContent=t;el.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>el.hidden=true,2600)}
+function toast(t){const el=$('#toast');el.textContent=t;el.hidden=false;el.classList.remove('show');void el.offsetWidth;el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>el.hidden=true,2600)}
 
 /* ---------- events ---------- */
 document.addEventListener('click',async e=>{
-  const tab=e.target.closest('[data-tab]'); if(tab){S.tab=tab.dataset.tab;render();window.scrollTo(0,0);return}
-  const go=e.target.closest('[data-tab-go]'); if(go){S.tab=go.dataset.tabGo;render();window.scrollTo(0,0);return}
+  const tab=e.target.closest('[data-tab]'); if(tab){if(S.tab!==tab.dataset.tab)S.enterNext=true;S.tab=tab.dataset.tab;render();window.scrollTo(0,0);return}
+  const go=e.target.closest('[data-tab-go]'); if(go){S.tab=go.dataset.tabGo;S.enterNext=true;render();window.scrollTo(0,0);return}
   if(e.target.id==='scrim'){closeSheet();return}
   const a=e.target.closest('[data-act]'); if(!a)return;
   const act=a.dataset.act;
   if(await onGateAction(act,a))return;
+  if(act==='wz-restart'){closeSheet();S.wz=newWizard(activeFunds().length?'existing':'new');S.status='setup';S.enterNext=true;render();window.scrollTo(0,0);return}
+  if(await wzAction(act,a))return;
   if(act==='close')closeSheet();
   else if(act==='open-income'){if(S.canWrite)openIncome()}
   else if(act==='open-expense'){if(S.canWrite)openExpense()}
@@ -601,13 +628,217 @@ document.addEventListener('click',async e=>{
   else if(act==='distribute-free'){if(S.canWrite)openIncome('free')}
   else if(act==='new-wish'){if(S.canWrite)openWish(null)}
   else if(act==='edit-wish'){const w=S.wishes.find(x=>x.id===a.dataset.id);if(w&&S.canWrite)openWish(w)}
-  else if(act==='hm'){S.histMonth=shiftMonth(S.histMonth,+a.dataset.d);render()}
+  else if(act==='hm'){S.histMonth=shiftMonth(S.histMonth,+a.dataset.d);S.enterNext=true;render()}
   else if(act==='del-tx'){
     if(a.dataset.armed!=='1'){a.dataset.armed='1';a.textContent='Нажмите ещё раз, чтобы удалить';setTimeout(()=>{if(a.isConnected){a.dataset.armed='';a.textContent='Удалить запись'}},4000);return}
     try{await DB.del('tx',a.dataset.id);toast('Запись удалена')}catch(err){toast('Не получилось удалить запись.')}
   }
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#sheet').hidden)closeSheet()});
+
+/* ---------- прогноз по желаниям ---------- */
+function wishForecast(w){
+  const price=+w.price||0; const v=analyzeWish(price,w.fundId||'',w.id); if(!v) return null;
+  if(v.tone==='good'){const o=v.opts.find(o=>o.tone==='good'&&o.buy);return {now:true,k:0,tone:'good',text:'можно сейчас',src:o?o.buy.src:null}}
+  const P=monthPicture(), F=monthFlow(P), {get,funds}=P;
+  const bal=id=>{const f=funds.find(x=>x.id===id);return f?fstate(f,get).balance:0};
+  let best=null; const cand=(k,how)=>{if(isFinite(k)&&(best===null||k<best.k))best={k:Math.max(1,k),how}};
+  const wg=funds.find(f=>f.kind==='goal'&&f.wishId===w.id);
+  if(wg&&+wg.cap) cand(Math.ceil(Math.max(0,price-bal(wg.id))/+wg.cap),`в цели «${wg.name}»`);
+  for(const r of funds.filter(f=>f.kind==='reward')){const perM=F.base*(+r.value||0)/100;if(perM>0)cand(Math.ceil(Math.max(0,price-bal(r.id))/perM),`в фонде «${r.name}»`)}
+  for(const d of funds.filter(f=>f.kind==='debt')){const s=fstate(d,get);const B=Math.round((+d.value||0)*BONUS_PCT/100)-(+d.bonusUsed||0);if(B>=price&&s.remaining>0&&F.free>0)cand(Math.ceil(s.remaining/F.free),`как награда за долг «${d.name}»`)}
+  if(!best) return {now:false,k:null,tone:v.tone,text:VSHORT[v.tone]};
+  return {now:false,k:best.k,soon:best.k<=1,tone:best.k<=1?'soon':'later',how:best.how,text:best.k<=1?'скоро, в ближайший месяц':`≈ ${monthIn(best.k)}`};
+}
+function wishTips(){
+  const out=[];
+  for(const w of S.wishes){
+    const fc=wishForecast(w); if(!fc) continue;
+    if(fc.now) out.push({tone:'good',title:`Можно купить: «${w.name}»`,text:fc.src?`Без ущерба для плана, из «${fundName(fc.src)}». Откройте желание, чтобы записать покупку.`:'Без ущерба для плана.',act:{label:'Открыть',act:'edit-wish',id:w.id}});
+    else if(fc.soon) out.push({tone:'info',title:`Скоро можно: «${w.name}»`,text:`Нужная сумма соберётся ${fc.how} в ближайший месяц.`,act:{label:'Открыть',act:'edit-wish',id:w.id}});
+  }
+  return out;
+}
+
+/* ---------- пошаговая настройка ---------- */
+const TPL_MONTHLY=['Квартира или аренда','Коммуналка','Еда','Связь и интернет','Транспорт, бензин','Платёж по кредиту','Детский сад, кружки','Подписки','Лекарства'];
+const KIND_SHORT={percent:'налог',monthly:'каждый месяц',reward:'награды',debt:'долг',goal:'цель',rest:'остаток'};
+function newWizard(mode){
+  return {mode,step:0,income:+(S.household&&S.household.expectedIncome)?String(S.household.expectedIncome):'',
+    tax:{on:true,pct:'6'},
+    monthly:[{name:'Квартира или аренда',amount:''},{name:'Коммуналка',amount:''},{name:'Еда',amount:''}],
+    debts:[],cushion:'',reward:{on:true,pct:String(REWARD_DEFAULT)},restName:'Накопления',
+    wishes:[{name:'',price:''}],busy:false};
+}
+const wzSteps=()=>S.wz.mode==='new'?['intro','income','monthly','debts','savings','wishes','finish']:['intro','income','queue','wishes','finish'];
+const nA=x=>Math.round(parseAmt(x));
+function wzFunds(){
+  const z=S.wz; if(z.mode!=='new') return activeFunds();
+  const L=[];
+  if(z.tax.on&&parseAmt(z.tax.pct)>0) L.push({id:'d-tax',name:'Налоги',kind:'percent',value:parseAmt(z.tax.pct),taxOnly:true});
+  z.monthly.forEach((r,i)=>{if(r.name.trim()&&nA(r.amount)>0)L.push({id:'d-m'+i,name:r.name.trim(),kind:'monthly',value:nA(r.amount)})});
+  if(z.reward.on&&parseAmt(z.reward.pct)>0) L.push({id:'d-rw',name:'Награды',kind:'reward',value:parseAmt(z.reward.pct)});
+  if(nA(z.cushion)>0) L.push({id:'d-c',name:'Подушка безопасности',kind:'goal',value:nA(z.cushion)});
+  z.debts.forEach((r,i)=>{if(r.name.trim()&&nA(r.amount)>0)L.push({id:'d-d'+i,name:r.name.trim(),kind:'debt',value:nA(r.amount),deadline:r.deadline||''})});
+  L.push({id:'d-rest',name:z.restName.trim()||'Накопления',kind:'rest',value:0});
+  return L;
+}
+function wzMetrics(){
+  const funds=wzFunds(), inc=nA(S.wz.income), ex=S.wz.mode!=='new';
+  const g=ex?stats().get:null; const left=f=>ex?(f.kind==='debt'?fstate(f,g).remaining:Math.max(0,(+f.value||0)-fstate(f,g).balance)):(+f.value||0);
+  const pct=sum(funds.filter(f=>f.kind==='percent').map(f=>+f.value||0));
+  const monthly=sum(funds.filter(f=>f.kind==='monthly').map(f=>+f.value||0));
+  const rp=sum(funds.filter(f=>f.kind==='reward').map(f=>+f.value||0));
+  const base=inc*(1-pct/100)-monthly; const free=Math.max(0,base)*(1-rp/100); const perReward=Math.max(0,base)*rp/100;
+  // сроки: цели и долги закрываются по очереди свободными деньгами
+  let cum=0; const eta={};
+  for(const f of funds){if(f.kind==='goal'&&!f.wishId||f.kind==='debt'){cum+=left(f);eta[f.id]=free>0?Math.ceil(cum/free):null}}
+  return {funds,inc,pct,monthly,rp,base,free,perReward,eta};
+}
+function simSplit(funds,amount){
+  let tmp=amount;
+  for(const f of funds){if(f.kind==='percent')tmp-=amount*(+f.value||0)/100;else if(f.kind==='monthly')tmp-=Math.min(Math.max(0,tmp),+f.value||0)}
+  const surplus=Math.max(0,tmp); let rem=amount; const rows=[];
+  for(const f of funds){
+    const v=+f.value||0; let need=0;
+    if(f.kind==='percent')need=amount*v/100; else if(f.kind==='reward')need=surplus*v/100; else if(f.kind==='rest')need=rem;
+    else if(f.kind==='goal')need=+f.cap>0?Math.min(v,+f.cap):v; else need=v;
+    const give=Math.max(0,Math.min(rem,Math.round(need))); rem-=give; rows.push({f,give});
+  }
+  return rows;
+}
+const whenTxt=k=>k==null?'когда появятся свободные деньги':k<=1?'в ближайший месяц':monthIn(k);
+
+function wzRow(list,i,r,fields){
+  return `<div class="wz-row" data-row="${list}-${i}">${fields.map(([key,ph,type])=>`<input data-wz-list="${list}" data-i="${i}" data-field="${key}" ${type==='num'?'inputmode="decimal"':type==='date'?'type="date"':''} placeholder="${ph}" value="${esc(r[key]||'')}" aria-label="${ph}" class="${type==='num'?'num':type==='date'?'date':''}">`).join('')}<button class="x sm" data-act="wz-del" data-list="${list}" data-i="${i}" aria-label="Удалить строку">×</button><div class="wz-eta note" data-eta="${list}-${i}"></div></div>`;
+}
+function wzBody(id){
+  const z=S.wz;
+  if(id==='intro') return z.mode==='new'?`<h2 class="gate-h">Настроим бюджет</h2>
+    <p class="muted">Каждый доход здесь раскладывается по фондам. Фонд — это конверт под одну задачу: квартира, еда, долг, подушка, награды.</p>
+    <div class="flow">${[['Обязательные платежи','квартира, еда, связь'],['Награды','немного на радости'],['Подушка и долги','закрываются по очереди'],['Накопления','всё, что осталось']].map(([a,b],i)=>`<div class="flow-step"><span class="flow-n">${i+1}</span><div><b>${a}</b><span class="note">${b}</span></div></div>`).join('<div class="flow-arrow" aria-hidden="true">↓</div>')}</div>
+    <p class="note">Деньги идут сверху вниз: пока фонд выше не заполнен, ниже ничего не попадает. Настройка займёт 3–5 минут, всё можно поменять потом.</p>`
+    :`<h2 class="gate-h">Настройка заново</h2><p class="muted">Проверим доход семьи, посмотрим, как он делится по вашим фондам, и добавим желания. Фонды и записи не изменятся.</p>`;
+  if(id==='income') return `<h2 class="gate-h">Доход семьи</h2>
+    <div class="hint">Сложите все регулярные доходы за месяц: зарплаты, подработки, пособия. Если доход плавает, берите средний или чуть ниже: план с запасом надёжнее.</div>
+    <div class="field"><label for="wzInc">Сколько семья получает в месяц, ₽</label><input class="big" id="wzInc" data-wz="income" inputmode="decimal" placeholder="Например, 300 000" value="${esc(z.income)}"></div>
+    ${z.mode==='new'?`<label class="check"><input type="checkbox" id="wzTax" data-wz="tax.on" ${z.tax.on?'checked':''}> С дохода нужно платить налог</label>
+    <div class="field" id="wzTaxBox" ${z.tax.on?'':'hidden'}><label for="wzTaxPct">Ставка налога, %</label><input id="wzTaxPct" data-wz="tax.pct" inputmode="decimal" value="${esc(z.tax.pct)}"><span class="note">Налог будет откладываться в отдельный фонд с каждого дохода, где стоит отметка «облагается налогом».</span></div>`:''}`;
+  if(id==='monthly') return `<h2 class="gate-h">Обязательные платежи</h2>
+    <div class="hint">То, что нужно оплатить каждый месяц при любом раскладе. Эти фонды стоят в очереди первыми: пока они не заполнены, деньги дальше не идут. Обязательный платёж по кредиту тоже сюда.</div>
+    <div class="chips">${TPL_MONTHLY.filter(t=>!z.monthly.some(r=>r.name===t)).map(t=>`<button class="chip-btn" data-act="wz-tpl" data-name="${esc(t)}">+ ${esc(t)}</button>`).join('')}</div>
+    <div class="wz-list">${z.monthly.map((r,i)=>wzRow('monthly',i,r,[['name','Название'],['amount','₽ в месяц','num']])).join('')}</div>
+    <button class="btn ghost sm" data-act="wz-add" data-list="monthly">+ Свой платёж</button>`;
+  if(id==='debts') return `<h2 class="gate-h">Долги</h2>
+    <div class="hint">Кредитки, займы, долги друзьям, которые хотите закрыть. На них пойдут свободные деньги после обязательных платежей. Первый в списке закрывается первым, поэтому наверх ставьте самый дорогой по процентам. За каждый закрытый долг полагается награда: ${BONUS_PCT}% от его суммы можно потратить на себя.</div>
+    <div class="wz-list">${z.debts.length?z.debts.map((r,i)=>wzRow('debts',i,r,[['name','Название'],['amount','Осталось, ₽','num'],['deadline','Срок','date']])).join(''):'<p class="note">Долгов нет? Тогда свободные деньги сразу пойдут в накопления. Шаг можно пропустить.</p>'}</div>
+    <button class="btn ghost sm" data-act="wz-add" data-list="debts">+ Добавить долг</button>`;
+  if(id==='savings'){const M=wzMetrics();const sug=Math.max(10000,Math.round(M.monthly/2/5000)*5000);
+    return `<h2 class="gate-h">Подушка и награды</h2>
+    <div class="hint">Подушка — небольшой запас на непредвиденное, чтобы не брать в долг снова. Она стоит в очереди перед долгами. Для начала хватит суммы на 2–3 недели жизни.</div>
+    <div class="field"><label for="wzCush">Подушка безопасности, ₽</label><input id="wzCush" data-wz="cushion" inputmode="decimal" placeholder="Например, ${nf.format(sug)}" value="${esc(z.cushion)}">${M.monthly>0?`<button class="link left" data-act="wz-sug" data-v="${sug}">Подставить ${fmt(sug)}</button>`:''}</div>
+    <div class="hint">Без радостей сложно долго держать режим экономии. Небольшой процент на себя помогает не сорваться и не покупать импульсивно в кредит.</div>
+    <label class="check"><input type="checkbox" data-wz="reward.on" ${z.reward.on?'checked':''}> Откладывать на награды</label>
+    <div class="field" id="wzRwBox" ${z.reward.on?'':'hidden'}><label for="wzRw">Процент от денег, оставшихся после обязательных платежей</label><input id="wzRw" data-wz="reward.pct" inputmode="decimal" value="${esc(z.reward.pct)}"></div>
+    <div class="field"><label for="wzRest">Куда копить всё, что останется</label><input id="wzRest" data-wz="restName" value="${esc(z.restName)}"></div>`;}
+  if(id==='queue') return `<h2 class="gate-h">Как делится доход</h2>
+    <div class="hint">Так ваш обычный доход пройдёт по фондам сверху вниз. Фонд забирает сумму, которой ему не хватает, остаток идёт следующему. Порядок и суммы меняются в разделе «Фонды».</div>
+    <div id="wzSplit"></div>`;
+  if(id==='wishes') return `<h2 class="gate-h">Желания</h2>
+    <div class="hint">Что хочется купить для себя или семьи. Сервис посчитает, когда покупка станет возможной без ущерба для плана, и подскажет, когда срок подойдёт.</div>
+    <div class="wz-list">${z.wishes.map((r,i)=>wzRow('wishes',i,r,[['name','Что купить'],['price','Цена, ₽','num']])).join('')}</div>
+    <button class="btn ghost sm" data-act="wz-add" data-list="wishes">+ Ещё желание</button>`;
+  if(id==='finish') return `<h2 class="gate-h">Готово</h2>
+    <div class="hint">Так распределится обычный месячный доход. Всё можно поменять в любой момент в разделе «Фонды».</div>
+    <div id="wzSplit"></div>`;
+  return '';
+}
+function wzLive(){
+  const z=S.wz; const id=wzSteps()[z.step]; const M=wzMetrics(); const box=$('#wzLive');
+  const setEta=(key,html)=>{const el=document.querySelector(`[data-eta="${key}"]`);if(el)el.innerHTML=html};
+  let h='';
+  if(id==='income'&&M.inc>0) h=`<div class="live">После налога остаётся <b>${fmt(M.inc*(1-M.pct/100))}</b> в месяц.</div>`;
+  if(id==='monthly'){
+    const after=M.inc*(1-M.pct/100);
+    h=`<div class="live ${M.base<0?'bad':''}">Обязательные платежи: <b>${fmt(M.monthly)}</b> в месяц.<br>${M.inc?(M.base>=0?`После них и налога остаётся <b>${fmt(M.base)}</b> на подушку, долги, награды и накопления.`:`Платежи больше дохода после налога на ${fmt(-M.base)}. Проверьте суммы или доход.`):'Укажите доход на прошлом шаге, чтобы увидеть остаток.'}</div>`;
+    if(after>0) z.monthly.forEach((r,i)=>setEta('monthly-'+i,nA(r.amount)>0?`${Math.round(nA(r.amount)/after*100)}% дохода`:''));
+  }
+  if(id==='debts'){
+    h=`<div class="live">Свободно для долгов: <b>${fmt(M.free)}</b> в месяц${M.rp?` (после ${nf.format(M.rp)}% на награды)`:''}.</div>`;
+    z.debts.forEach((r,i)=>{const k=M.eta['d-d'+i];const late=r.deadline&&k!=null&&shiftMonth(curMonth(),k)>r.deadline.slice(0,7);
+      setEta('debts-'+i,nA(r.amount)>0?`Закроется ${whenTxt(k)}${late?' · к сроку не успевает':''} · награда ${fmt(nA(r.amount)*BONUS_PCT/100)}`:'')});
+  }
+  if(id==='savings') h=`<div class="live">${M.rp?`На награды: около <b>${fmt(M.perReward)}</b> в месяц.<br>`:''}${M.eta['d-c']!=null&&nA(z.cushion)>0?`Подушка наберётся ${whenTxt(M.eta['d-c'])}.`:''}</div>`;
+  if(id==='wishes'){
+    h=M.perReward>0?`<div class="live">В фонд наград пойдёт около <b>${fmt(M.perReward)}</b> в месяц.</div>`:`<div class="live">${S.wz.mode==='new'?'Фонд наград выключен, поэтому сроки по желаниям не посчитать. Его можно включить на шаге «Подушка и награды».':'Сроки по желаниям считаются по фонду наград. Включите его из карточки любого желания на главной.'}</div>`;
+    let acc=0; z.wishes.forEach((r,i)=>{const p=nA(r.price);if(!(p>0)||!M.perReward){setEta('wishes-'+i,'');return}acc+=p;const k=Math.ceil(acc/M.perReward);setEta('wishes-'+i,`Можно купить ${whenTxt(k)} из фонда наград`)});
+  }
+  if(id==='queue'||id==='finish'){
+    const el=$('#wzSplit'); if(el){
+      if(!M.inc){el.innerHTML='<p class="note">Укажите доход семьи, чтобы увидеть разбивку.</p>'}
+      else{const rows=simSplit(M.funds,M.inc);
+        el.innerHTML=`<div class="list">${rows.map(({f,give})=>`<div class="row"><div class="row-main"><span class="name">${esc(f.name)}</span><span class="amt ${give?'':'muted'}">${fmt(give)}</span></div><div class="note"><span class="chip ${f.kind}">${KIND_SHORT[f.kind]||f.kind}</span>${f.kind==='debt'||(f.kind==='goal'&&!f.wishId)?`${M.eta[f.id]!=null?'закроется '+whenTxt(M.eta[f.id]):''}`:''}</div></div>`).join('')}</div>
+        <p class="note">Доход в месяц: ${fmt(M.inc)}.${M.base<0?' Обязательные платежи больше дохода: проверьте суммы.':''}</p>`;}
+    }
+    if(id==='finish'){const n=S.wz.wishes.filter(r=>r.name.trim()&&nA(r.price)>0).length;h=n?`<div class="live">Желаний в списке: ${n}. Сроки по ним появятся на главной.</div>`:''}
+  }
+  if(box) box.innerHTML=h;
+}
+function drawWizard(){
+  const z=S.wz; const steps=wzSteps(); const id=steps[z.step]; const main=$('#main');
+  const last=z.step===steps.length-1;
+  main.dataset.view='setup';
+  main.innerHTML=`<section class="wz">
+    <div class="wz-top"><span class="eyebrow">Шаг ${z.step+1} из ${steps.length}</span><div class="wz-prog"><i style="width:${((z.step+1)/steps.length*100).toFixed(1)}%"></i></div></div>
+    <div class="wz-body">${wzBody(id)}</div>
+    <div id="wzLive"></div>
+    <div class="err" id="wzErr"></div>
+    <div class="wz-foot">${z.step>0?'<button class="btn ghost" data-act="wz-back">Назад</button>':'<span></span>'}<button class="btn primary" data-act="wz-next" ${z.busy?'disabled':''}>${z.step===0?'Начать':last?'Начать пользоваться':id==='debts'&&!z.debts.length?'Долгов нет, дальше':'Дальше'}</button></div>
+    ${z.step===0?`<div class="gate-links"><button class="link" data-act="wz-skip">${z.mode==='new'?'Пропустить, настрою сам':'Закрыть'}</button></div>`:''}
+  </section>`;
+  main.classList.remove('enter');void main.offsetWidth;main.classList.add('enter');
+  wzLive();
+}
+function wzSet(path,val){const z=S.wz;const p=path.split('.');if(p.length===2)z[p[0]][p[1]]=val;else z[p[0]]=val}
+document.addEventListener('input',e=>{
+  if(S.status!=='setup'||!S.wz)return; const t=e.target;
+  if(t.dataset.wz){wzSet(t.dataset.wz,t.type==='checkbox'?t.checked:t.value);
+    if(t.dataset.wz==='tax.on'){const b=$('#wzTaxBox');if(b)b.hidden=!t.checked}
+    if(t.dataset.wz==='reward.on'){const b=$('#wzRwBox');if(b)b.hidden=!t.checked}
+    wzLive();return}
+  if(t.dataset.wzList){S.wz[t.dataset.wzList][+t.dataset.i][t.dataset.field]=t.value;wzLive()}
+});
+async function wzAction(act,a){
+  const z=S.wz; if(!z) return false; const steps=wzSteps(); const id=steps[z.step];
+  if(act==='wz-add'){const L=a.dataset.list;z[L].push(L==='debts'?{name:'',amount:'',deadline:''}:L==='wishes'?{name:'',price:''}:{name:'',amount:''});drawWizard();
+    const rows=document.querySelectorAll(`[data-wz-list="${L}"][data-field="name"]`);rows[rows.length-1]?.focus();return true}
+  if(act==='wz-del'){z[a.dataset.list].splice(+a.dataset.i,1);drawWizard();return true}
+  if(act==='wz-tpl'){z.monthly.push({name:a.dataset.name,amount:''});drawWizard();const r=document.querySelectorAll('[data-wz-list="monthly"][data-field="amount"]');r[r.length-1]?.focus();return true}
+  if(act==='wz-sug'){z.cushion=a.dataset.v;drawWizard();return true}
+  if(act==='wz-back'){z.step=Math.max(0,z.step-1);drawWizard();window.scrollTo(0,0);return true}
+  if(act==='wz-skip'){
+    if(z.mode==='new') DB.setHousehold({setupDone:true});
+    S.wz=null;S.status='ready';S.enterNext=true;render();return true}
+  if(act==='wz-next'){
+    if(id==='income'&&!(nA(z.income)>0)){$('#wzErr').textContent='Укажите доход семьи в месяц, по нему строится весь план.';return true}
+    if(id==='monthly'&&z.monthly.some(r=>r.name.trim()&&!(nA(r.amount)>0))){$('#wzErr').textContent='У некоторых платежей нет суммы. Укажите её или удалите строку.';return true}
+    if(id==='debts'&&z.debts.some(r=>r.name.trim()&&!(nA(r.amount)>0))){$('#wzErr').textContent='Укажите, сколько осталось погасить по каждому долгу.';return true}
+    if(z.step<steps.length-1){z.step++;drawWizard();window.scrollTo(0,0);return true}
+    z.busy=true;drawWizard();
+    try{
+      const at=Date.now();
+      await DB.setHousehold({expectedIncome:nA(z.income),setupDone:true});
+      if(S.household){S.household.expectedIncome=nA(z.income);S.household.setupDone=true}
+      if(z.mode==='new'){
+        wzFunds().forEach((f,i)=>{const {id,...d}=f;DB.add('funds',{...d,start:0,taxOnly:!!d.taxOnly,deadline:d.deadline||'',cap:0,order:i+1,createdAt:at+i})});
+      }
+      z.wishes.filter(r=>r.name.trim()&&nA(r.price)>0).forEach((r,i)=>DB.add('wishes',{name:r.name.trim(),price:nA(r.price),fundId:'',by:S.uid||null,createdAt:at+100+i}));
+      S.wz=null;S.status='ready';S.tab='now';S.enterNext=true;render();window.scrollTo(0,0);toast('Бюджет настроен');
+    }catch(err){z.busy=false;drawWizard();$('#wzErr').textContent='Не получилось сохранить. Проверьте интернет и попробуйте ещё раз.'}
+    return true;
+  }
+  return false;
+}
 
 /* ---------- вход и семья ---------- */
 const AUTH_ERR = {
@@ -690,6 +921,7 @@ function openSettings(){
   <button class="btn ghost" id="sSaveName">Сохранить имя</button>
   <div class="field"><label for="sInc">Обычный доход семьи в месяц, ₽</label><input id="sInc" inputmode="decimal" value="${S.household&&+S.household.expectedIncome?nf.format(S.household.expectedIncome):''}"><span class="note">По нему считается, на сколько покупки сдвигают закрытие долгов и когда накопится цель.</span></div>
   <button class="btn ghost" id="sSaveInc">Сохранить доход</button>
+  <button class="btn ghost" data-act="wz-restart">Пройти настройку заново</button>
   <div class="err" id="sErr"></div>
   <button class="btn danger" data-act="logout">Выйти из аккаунта</button>`,()=>{
     $('#sCopy').addEventListener('click',async()=>{const c=$('#sCode').textContent;try{await navigator.clipboard.writeText(c);toast('Код скопирован')}catch(e){const r=document.createRange();r.selectNodeContents($('#sCode'));const s=getSelection();s.removeAllRanges();s.addRange(r)}});
@@ -707,14 +939,20 @@ let unsubs=[];
 function stopWatching(){unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[]}
 function startHousehold(hid){
   stopWatching(); S.hid=hid; DB.useHousehold(hid); S.status='loading'; render();
-  let gotF=false,gotT=false;
-  const done=()=>{if(gotF&&gotT&&S.status==='loading')S.status='ready';if(S.status==='ready')render()};
+  let gotF=false,gotT=false,gotH=false;
+  const done=()=>{
+    if(gotF&&gotT&&gotH&&S.status==='loading'){
+      if(!(S.household&&S.household.setupDone)&&!S.funds.length){S.wz=newWizard('new');S.status='setup'}else S.status='ready';
+      S.enterNext=true; render(); return;
+    }
+    if(S.status==='ready'||S.status==='setup')renderSoon();
+  };
   const onErr=e=>{if(e&&e.code==='permission-denied'){stopWatching();S.status='onboard';render();toast('Нет доступа к этому бюджету. Присоединитесь заново по коду.')}};
   unsubs.push(DB.watchCol('funds',list=>{S.funds=list.sort((a,b)=>(+a.order||0)-(+b.order||0)||(a.createdAt||0)-(b.createdAt||0));gotF=true;done()},onErr));
   unsubs.push(DB.watchCol('tx',list=>{S.tx=list.sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||0)-(a.createdAt||0));gotT=true;done()},onErr));
   unsubs.push(DB.watchCol('wishes',list=>{S.wishes=list.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));done()},()=>{}));
   unsubs.push(DB.watchCol('members',list=>{S.members={};for(const m of list)S.members[m.id]=m.name||'';S.names={...S.members,[S.uid]:'вы'};done()},()=>{}));
-  unsubs.push(DB.watchHousehold(h=>{S.household=h;if(S.status==='ready')render()},()=>{}));
+  unsubs.push(DB.watchHousehold(h=>{S.household=h;gotH=true;done()},()=>{gotH=true;done()}));
 }
 
 render();
