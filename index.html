@@ -247,7 +247,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 
 /* шторки */
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:20}
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--sheet);border-radius:20px 20px 0 0;max-height:92%;overflow-y:auto;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));box-shadow:var(--sheet-shadow)}
+.sheet{overflow-x:hidden;overscroll-behavior:contain;position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--sheet);border-radius:20px 20px 0 0;max-height:92%;overflow-y:auto;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));box-shadow:var(--sheet-shadow)}
 .sheet .wrap{display:flex;flex-direction:column;gap:14px;padding-block:18px 4px}
 .sheet-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .x{width:36px;height:36px;border-radius:50%;border:0;background:var(--surface-2);display:grid;place-items:center}
@@ -262,7 +262,12 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .field label,.field .lbl{font-size:13px;color:var(--muted);font-weight:500}
 .field input,.field select{width:100%;padding:12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--field);min-width:0}
 .field input.big{font-size:26px!important;font-weight:700;padding:12px 14px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.grid2>*{min-width:0}
+.field input[type=date]{-webkit-appearance:none;appearance:none;display:block;width:100%;max-width:100%;min-width:0;min-height:46px;text-align:left}
+.field input[type=date]::-webkit-date-and-time-value{text-align:left;min-width:0}
+.who{display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--muted);margin-top:2px}
+.who .av{margin-right:2px}
 .check{display:flex;gap:10px;align-items:center;font-size:14px}
 .check input{width:20px;height:20px;accent-color:var(--accent)}
 .emojis{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}

@@ -325,7 +325,7 @@ function renderNow(){
   h+=paymentsBlock();
   const T=tips(P); T.splice(Math.min(1,T.length),0,...wishTips());
   if(T.length) h+=`<section class="block"><h2>Что делать сейчас</h2><div class="tips">${T.map(t=>`<div class="tip ${t.tone}"><span class="dot"></span><div><b>${esc(t.title)}</b><span class="muted small">${esc(t.text)}</span>${t.act&&(S.canWrite||t.act.act==='go-funds')?`<div class="opt-act"><button class="btn sm ghost" data-act="${t.act.act}" ${t.act.id?`data-id="${esc(t.act.id)}"`:''}>${esc(t.act.label)}</button></div>`:''}</div></div>`).join('')}</div></section>`;
-  if(S.wishes.length) h+=`<section class="block"><h2>Хочу купить</h2><div class="list">${S.wishes.map(w=>{const fc=wishForecast(w);return `<button class="row wish" data-act="edit-wish" data-id="${esc(w.id)}" ${S.canWrite?'':'disabled'}><span class="row-main"><span class="name">${esc(w.name||'Без названия')}</span><span class="amt">${fmt(w.price)}</span></span><span>${fc?`<span class="chip v-${fc.tone}">${esc(fc.text)}</span>${fc.how&&!fc.now?`<span class="note"> ${esc(fc.how)}</span>`:''}`:''}</span></button>`}).join('')}</div></section>`;
+  if(S.wishes.length) h+=`<section class="block"><h2>Хочу купить</h2><div class="list">${S.wishes.map(w=>{const fc=wishForecast(w);return `<button class="row wish" data-act="edit-wish" data-id="${esc(w.id)}" ${S.canWrite?'':'disabled'}><span class="row-main"><span class="name">${esc(w.name||'Без названия')}</span><span class="amt">${fmt(w.price)}</span></span>${wishWho(w)}<span>${fc?`<span class="chip v-${fc.tone}">${esc(fc.text)}</span>${fc.how&&!fc.now?`<span class="note"> ${esc(fc.how)}</span>`:''}`:''}</span></button>`}).join('')}</div></section>`;
   h+=`<section class="block"><div class="sec-head"><h2>Фонды</h2><button class="btn sm ghost" data-tab-go="funds">Настроить</button></div><div class="list river">${activeFunds().map(f=>fundRowNow(f,P.get,mi)).join('')}</div></section>`;
   return h;
 }
@@ -422,6 +422,7 @@ function avatar(uid){
   if(!uid) return ''; const ids=Object.keys(S.members).sort(); const i=Math.max(0,ids.indexOf(uid))%3; const n=(S.members[uid]||'').trim();
   return n?`<span class="av a${i}" aria-hidden="true">${esc(n[0].toUpperCase())}</span>`:'';
 }
+function wishWho(w){const n=(S.members[w.by]||'').trim();return n?`<span class="who">${avatar(w.by)}Добавил: ${esc(n)}</span>`:''}
 function dayHead(s){
   const [y,m,d]=s.split('-').map(Number); const dt=new Date(y,m-1,d); const t=today(); const yd=isoD(new Date(Date.now()-864e5));
   return s===t?'Сегодня':s===yd?'Вчера':`${d} ${GEN[m-1]}, ${WEEK[dt.getDay()]}`;
@@ -649,7 +650,7 @@ function openWish(w){
   const opts=activeFunds().filter(f=>f.kind!=='debt');
   const fundOpts=`<option value="">Подобрать автоматически</option>${opts.map(f=>`<option value="${esc(f.id)}" ${w.fundId===f.id?'selected':''}>${esc(f.name)} · ${fmt(fstate(f,P.get).balance)}</option>`).join('')}${P.free>0.5||w.fundId==='_free'?`<option value="_free" ${w.fundId==='_free'?'selected':''}>Без фонда · ${fmt(P.free)}</option>`:''}`;
   openSheet(`${sheetHead(isNew?'Хочу купить':'Покупка')}
-  <div class="field"><label for="wName">Что</label><input id="wName" value="${esc(w.name)}" placeholder="Кроссовки, планшет, ремонт…"></div>
+  ${isNew?'':(w.by&&S.members[w.by]?`<div class="note">Добавил: ${esc(S.members[w.by])}</div>`:'')}<div class="field"><label for="wName">Что</label><input id="wName" value="${esc(w.name)}" placeholder="Кроссовки, планшет, ремонт…"></div>
   <div class="field"><label for="wPrice">Цена</label><input class="big" id="wPrice" inputmode="decimal" placeholder="0 ₽" autocomplete="off" value="${w.price?nf.format(w.price):''}"></div>
   <div class="field"><label for="wFund">Из какого фонда хотите платить</label><select id="wFund">${fundOpts}</select></div>
   <div id="wVerdict" class="wish-box"></div><div class="err" id="wErr"></div>
