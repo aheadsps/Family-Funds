@@ -268,6 +268,7 @@ function render(){
   $('#monthLbl').textContent=monthLabel(curMonth());
   document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===S.tab?'page':'false'));
   const main=$('#main');
+  if(S.status!=='loading') document.body.dataset.ready='1';
   document.querySelector('nav.tabs').hidden=S.status!=='ready';
   $('#setBtn').hidden=S.status!=='ready';
   if(S.status==='setup'){if(main.dataset.view!=='setup'||S.enterNext){S.enterNext=false;drawWizard()}return}
@@ -797,18 +798,18 @@ function exportICS(){
   if(!fs.length){toast('Сначала укажите день платежа у фондов');return}
   const now=new Date(), t0=new Date(now.getFullYear(),now.getMonth(),now.getDate());
   const stamp=now.toISOString().replace(/[-:]/g,'').replace(/\.\d+/,'');
-  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Family Funds//RU','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:Семейные фонды: платежи'];
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Potok//RU','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:Поток: платежи'];
   for(const f of fs){
     const day=Math.min(31,Math.round(+f.payDay)); let first=dueIn(t0.getFullYear(),t0.getMonth(),day); if(first<t0) first=dueIn(t0.getFullYear(),t0.getMonth()+1,day);
     const rr=day<=28?`FREQ=MONTHLY;BYMONTHDAY=${day}`:`FREQ=MONTHLY;BYMONTHDAY=${Array.from({length:day-27},(_,i)=>28+i).join(',')};BYSETPOS=-1`;
     const amt=f.kind==='monthly'?(+f.value||0):(+f.minPay||0);
     const title=`Платёж: ${f.name}${amt?` — ${nf.format(amt)} ₽`:''}`;
-    L.push('BEGIN:VEVENT',`UID:ff-${f.id}@family-funds`,`DTSTAMP:${stamp}`,`DTSTART;VALUE=DATE:${isoD(first).replace(/-/g,'')}`,`RRULE:${rr}`,
-      `SUMMARY:${icsEsc(title)}`,`DESCRIPTION:${icsEsc('После оплаты нажмите «Оплатил» в приложении «Семейные фонды».')}`,'TRANSP:TRANSPARENT',
+    L.push('BEGIN:VEVENT',`UID:ff-${f.id}@potok`,`DTSTAMP:${stamp}`,`DTSTART;VALUE=DATE:${isoD(first).replace(/-/g,'')}`,`RRULE:${rr}`,
+      `SUMMARY:${icsEsc(title)}`,`DESCRIPTION:${icsEsc('После оплаты нажмите «Оплатил» в приложении «Поток».')}`,'TRANSP:TRANSPARENT',
       'BEGIN:VALARM','ACTION:DISPLAY',`DESCRIPTION:${icsEsc('Завтра '+title.toLowerCase())}`,'TRIGGER:-PT15H','END:VALARM','END:VEVENT');
   }
   L.push('END:VCALENDAR');
-  saveFile('platezhi-family-funds.ics','text/calendar;charset=utf-8',L.map(icsFold).join('\r\n')+'\r\n',{calendar:true});
+  saveFile('platezhi-potok.ics','text/calendar;charset=utf-8',L.map(icsFold).join('\r\n')+'\r\n',{calendar:true});
 }
 
 /* ---------- экспорт ---------- */
@@ -830,12 +831,12 @@ function exportCSV(){
     const alloc=Object.entries(t.alloc||{}).filter(([,a])=>a>0).map(([k,a])=>`${fundName(k)}: ${Math.round(a)}`).join(', ');
     return [t.date,type,Math.round(+t.amount||0),fund,from,t.note||'',S.members[t.by]||'',alloc].map(q).join(';');
   });
-  saveFile(`family-funds-zapisi-${today()}.csv`,'text/csv;charset=utf-8','\ufeff'+[head.join(';'),...rows].join('\r\n')+'\r\n');
+  saveFile(`potok-zapisi-${today()}.csv`,'text/csv;charset=utf-8','\ufeff'+[head.join(';'),...rows].join('\r\n')+'\r\n');
 }
 function exportJSON(){
   const h=S.household||{};
   const data={app:'family-funds',format:2,exportedAt:new Date().toISOString(),household:{expectedIncome:h.expectedIncome||0,debtStrategy:h.debtStrategy||'custom',debtBudget:h.debtBudget||0},members:S.members,funds:S.funds,tx:S.tx,wishes:S.wishes};
-  saveFile(`family-funds-kopiya-${today()}.json`,'application/json',JSON.stringify(data,null,2));
+  saveFile(`potok-kopiya-${today()}.json`,'application/json',JSON.stringify(data,null,2));
 }
 
 /* ---------- план погашения долгов ---------- */
@@ -913,7 +914,7 @@ function closeCelebration(){const el=$('#cele');el.hidden=true;el.innerHTML='';c
 function confetti(cv){
   if(!cv||calm()) return;
   const dpr=Math.min(2,devicePixelRatio||1), W=cv.clientWidth, H=cv.clientHeight; cv.width=W*dpr; cv.height=H*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr);
-  const cs=getComputedStyle(document.documentElement); const cols=['--accent','--reward','--info','--debt','--accent-2'].map(v=>cs.getPropertyValue(v).trim()||'#1F6B52');
+  const cs=getComputedStyle(document.documentElement); const cols=['--accent','--reward','--goal','--debt','--accent-2'].map(v=>cs.getPropertyValue(v).trim()||'#1D5FA6');
   const P=Array.from({length:120},()=>({x:W/2+(Math.random()-.5)*80,y:H*.3,vx:(Math.random()-.5)*10,vy:-Math.random()*10-4,s:5+Math.random()*5,r:Math.random()*6,vr:(Math.random()-.5)*.3,c:cols[Math.floor(Math.random()*cols.length)]}));
   const t0=performance.now();
   const step=t=>{const k=(t-t0)/1000; g.clearRect(0,0,W,H);
@@ -923,7 +924,7 @@ function confetti(cv){
 }
 
 /* ---------- тема ---------- */
-const THEME_COL={light:'#F6F3EC',dark:'#131512'};
+const THEME_COL={light:'#F1F6FA',dark:'#0A1520'};
 const curTheme=()=>{const t=LS.get('ff-theme');return t==='light'||t==='dark'?t:'auto'};
 function setTheme(t){
   const metas=document.querySelectorAll('meta[name=theme-color]');

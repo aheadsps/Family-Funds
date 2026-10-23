@@ -3,78 +3,92 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Семейные фонды</title>
-<meta name="description" content="Семейный бюджет: доходы раскладываются по фондам, траты списываются, план погашения долгов и подсказки по покупкам.">
-<meta name="theme-color" content="#F6F3EC" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#131512" media="(prefers-color-scheme: dark)">
+<title>Поток</title>
+<meta name="description" content="Поток: семейный бюджет. Доходы раскладываются по фондам, траты списываются, план погашения долгов и подсказки по покупкам.">
+<meta name="theme-color" content="#F1F6FA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0A1520" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Фонды">
+<meta name="apple-mobile-web-app-title" content="Поток">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait)" href="splash/s-750x1334.png">
+<link rel="apple-touch-startup-image" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1170x2532.png">
+<link rel="apple-touch-startup-image" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1179x2556.png">
+<link rel="apple-touch-startup-image" media="(device-width:428px) and (device-height:926px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1284x2778.png">
+<link rel="apple-touch-startup-image" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1290x2796.png">
+<link rel="apple-touch-startup-image" media="(device-width:402px) and (device-height:874px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1206x2622.png">
+<link rel="apple-touch-startup-image" media="(device-width:440px) and (device-height:956px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="splash/s-1320x2868.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="preload" href="marck-script.woff" as="font" type="font/woff" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@700&display=swap">
 <script>
 /* Тема до первой отрисовки, чтобы не мигало: auto | light | dark */
-(function(){try{var t=localStorage.getItem('ff-theme');if(t==='light'||t==='dark'){document.documentElement.dataset.theme=t;var c=t==='dark'?'#131512':'#F6F3EC';document.querySelectorAll('meta[name=theme-color]').forEach(function(m){m.content=c})}}catch(e){}})();
+(function(){try{var t=localStorage.getItem('ff-theme');if(t==='light'||t==='dark'){document.documentElement.dataset.theme=t;var c=t==='dark'?'#0A1520':'#F1F6FA';document.querySelectorAll('meta[name=theme-color]').forEach(function(m){m.content=c})}}catch(e){}})();
 </script>
 <style>
-/* «Тёплый поток»: тёплая основа, цвет по типу фонда, русло очереди, праздник за прогресс.
+/* «Поток»: водная гамма (синий, голубой, бирюзовый), солнечный акцент для наград, каллиграфия для заголовков.
+   Раньше: «Тёплый поток»: тёплая основа, цвет по типу фонда, русло очереди, праздник за прогресс.
    Layout: одна колонка, шапка, четыре вкладки внизу, шторки для ввода. */
+@font-face{font-family:"Marck Script";src:url(marck-script.woff) format("woff");font-weight:400;font-style:normal;font-display:swap}
 :root{
-  --bg:#F6F3EC; --surface:#FFFFFF; --surface-2:#ECE7DC; --surface-3:#E3DDCF; --sheet:#FFFFFF; --field:#F6F3EC;
-  --ink:#1C2420; --muted:#636961; --line:#E0DACD;
-  --accent:#1F6B52; --accent-ink:#FFFFFF; --accent-soft:#DCEBE3; --accent-2:#3F8F6E;
-  --reward:#E3923A; --reward-ink:#94560F; --reward-soft:#F8E7CF;
-  --debt:#9C4934; --debt-soft:#F5E0D9;
-  --info:#33627F; --info-soft:#DEE9F0;
-  --warn:#7E5A00; --warn-soft:#F2E6C2;
+  --bg:#F1F6FA; --surface:#FFFFFF; --surface-2:#E2ECF4; --surface-3:#D3E0EA; --sheet:#FFFFFF; --field:#F1F6FA;
+  --ink:#0F2233; --muted:#566878; --line:#D3E0EA; --grid:rgba(29,95,166,.055);
+  --accent:#1D5FA6; --accent-ink:#FFFFFF; --accent-soft:#DCEAF8; --accent-2:#4A93D6;
+  --goal:#0A7480; --goal-soft:#D6EEF0;
+  --reward:#E3923A; --reward-ink:#8F5410; --reward-soft:#F8E7CF;
+  --debt:#A04830; --debt-soft:#F6E1DA;
+  --info:#4552A0; --info-soft:#E1E4F5;
+  --warn:#7A5600; --warn-soft:#F2E6C2;
   --bad:#B3261E; --bad-soft:#F7DDDA;
-  --good:#1F6B52; --good-soft:#DCEBE3;
-  --graphite:#636961; --graphite-soft:#EAE5DB;
-  --scrim:rgba(28,36,32,.38); --card-shadow:0 1px 2px rgba(28,36,32,.05);
-  --sheet-shadow:0 -10px 30px rgba(28,36,32,.16);
-  --toast-bg:#1C2420; --toast-ink:#F6F3EC; --toast-act:#7FD3B0;
+  --good:#0A7480; --good-soft:#D6EEF0;
+  --graphite:#566878; --graphite-soft:#E4ECF2;
+  --scrim:rgba(10,34,51,.40); --card-shadow:0 1px 2px rgba(15,34,51,.06);
+  --sheet-shadow:0 -10px 30px rgba(15,34,51,.18);
+  --toast-bg:#0F2233; --toast-ink:#F1F6FA; --toast-act:#8CC8F5;
   --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
+  --f-script:"Marck Script","Segoe Script","Snell Roundhand",cursive;
   --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
   --r:16px; --r-sm:12px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#131512; --surface:#1B1E1A; --surface-2:#252923; --surface-3:#2E332C; --sheet:#1E221D; --field:#151814;
-  --ink:#E9ECE5; --muted:#9CA49B; --line:#2F342D;
-  --accent:#5CC79F; --accent-ink:#0B2A20; --accent-soft:#183A2E; --accent-2:#7FD3B0;
+  --bg:#0A1520; --surface:#111F2E; --surface-2:#192D40; --surface-3:#243B50; --sheet:#0F1E2C; --field:#0C1A27;
+  --ink:#E6EFF6; --muted:#93A9BC; --line:#213447; --grid:rgba(109,181,240,.05);
+  --accent:#6DB5F0; --accent-ink:#06223A; --accent-soft:#13314C; --accent-2:#8FCBF7;
+  --goal:#58CFD4; --goal-soft:#10343A;
   --reward:#F0AE5E; --reward-ink:#F0AE5E; --reward-soft:#3A2A16;
-  --debt:#E58A72; --debt-soft:#3B231C;
-  --info:#8DB8D6; --info-soft:#1C2C38;
+  --debt:#F09A86; --debt-soft:#3B231C;
+  --info:#A9B4F2; --info-soft:#212A4D;
   --warn:#E2B84B; --warn-soft:#352C12;
   --bad:#F2867C; --bad-soft:#3E1F1C;
-  --good:#5CC79F; --good-soft:#183A2E;
-  --graphite:#9CA49B; --graphite-soft:#272B26;
+  --good:#58CFD4; --good-soft:#10343A;
+  --graphite:#93A9BC; --graphite-soft:#1B2A38;
   --scrim:rgba(0,0,0,.62); --card-shadow:none; --sheet-shadow:0 -1px 0 var(--line);
-  --toast-bg:#E9ECE5; --toast-ink:#131512; --toast-act:#1F6B52;
+  --toast-bg:#E6EFF6; --toast-ink:#0A1520; --toast-act:#1D5FA6;
   color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#131512; --surface:#1B1E1A; --surface-2:#252923; --surface-3:#2E332C; --sheet:#1E221D; --field:#151814;
-  --ink:#E9ECE5; --muted:#9CA49B; --line:#2F342D;
-  --accent:#5CC79F; --accent-ink:#0B2A20; --accent-soft:#183A2E; --accent-2:#7FD3B0;
+  --bg:#0A1520; --surface:#111F2E; --surface-2:#192D40; --surface-3:#243B50; --sheet:#0F1E2C; --field:#0C1A27;
+  --ink:#E6EFF6; --muted:#93A9BC; --line:#213447; --grid:rgba(109,181,240,.05);
+  --accent:#6DB5F0; --accent-ink:#06223A; --accent-soft:#13314C; --accent-2:#8FCBF7;
+  --goal:#58CFD4; --goal-soft:#10343A;
   --reward:#F0AE5E; --reward-ink:#F0AE5E; --reward-soft:#3A2A16;
-  --debt:#E58A72; --debt-soft:#3B231C;
-  --info:#8DB8D6; --info-soft:#1C2C38;
+  --debt:#F09A86; --debt-soft:#3B231C;
+  --info:#A9B4F2; --info-soft:#212A4D;
   --warn:#E2B84B; --warn-soft:#352C12;
   --bad:#F2867C; --bad-soft:#3E1F1C;
-  --good:#5CC79F; --good-soft:#183A2E;
-  --graphite:#9CA49B; --graphite-soft:#272B26;
+  --good:#58CFD4; --good-soft:#10343A;
+  --graphite:#93A9BC; --graphite-soft:#1B2A38;
   --scrim:rgba(0,0,0,.62); --card-shadow:none; --sheet-shadow:0 -1px 0 var(--line);
-  --toast-bg:#E9ECE5; --toast-ink:#131512; --toast-act:#1F6B52;
+  --toast-bg:#E6EFF6; --toast-ink:#0A1520; --toast-act:#1D5FA6;
   color-scheme:dark}
 
 /* цвет фонда по типу */
 .k-percent{--k:var(--info);--k-ink:var(--info);--k-soft:var(--info-soft)}
 .k-monthly{--k:var(--accent);--k-ink:var(--accent);--k-soft:var(--accent-soft)}
-.k-goal{--k:var(--accent-2);--k-ink:var(--accent);--k-soft:var(--accent-soft)}
+.k-goal{--k:var(--goal);--k-ink:var(--goal);--k-soft:var(--goal-soft)}
 .k-debt{--k:var(--debt);--k-ink:var(--debt);--k-soft:var(--debt-soft)}
 .k-reward{--k:var(--reward);--k-ink:var(--reward-ink);--k-soft:var(--reward-soft)}
 .k-rest{--k:var(--graphite);--k-ink:var(--graphite);--k-soft:var(--graphite-soft)}
@@ -82,7 +96,7 @@
 
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;touch-action:manipulation}
-body{margin:0;min-height:100vh;min-height:100dvh;overflow-x:hidden;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+body{margin:0;min-height:100vh;min-height:100dvh;overflow-x:hidden;background-color:var(--bg);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:28px 28px;background-position:-1px -1px;color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
 input,select,textarea{font-size:16px!important}
 button{cursor:pointer}
@@ -95,7 +109,7 @@ img{max-width:100%}
 header.top{position:sticky;top:0;padding-top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
 .top-in{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:10px}
 .eyebrow{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600}
-h1{font-family:var(--f-display);font-weight:700;font-size:17px;margin:2px 0 0;letter-spacing:-.01em}
+h1{font-family:var(--f-script);font-weight:400;font-size:32px;line-height:1;margin:0;letter-spacing:0;color:var(--accent)}
 h2{font-weight:600;font-size:17px;margin:0;letter-spacing:-.005em}
 h3{font-weight:600;font-size:15px;margin:0}
 main{padding-block:16px calc(104px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:22px}
@@ -315,7 +329,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .hdr-btns{display:flex;gap:8px;align-items:center}
 .icon-btn{width:40px;height:40px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);display:grid;place-items:center}
 .gate{display:flex;flex-direction:column;gap:16px;padding-top:8px}
-.gate-h{font-family:var(--f-display);font-weight:700;font-size:23px;margin:4px 0 6px;letter-spacing:-.01em}
+.gate-h{font-family:var(--f-script);font-weight:400;font-size:34px;line-height:1.1;margin:4px 0 6px;letter-spacing:0}
 .gate-form{padding:16px;display:flex;flex-direction:column;gap:12px}
 .gate-links{display:flex;flex-wrap:wrap;gap:16px;justify-content:center}
 .code{font-weight:700;font-size:26px;letter-spacing:.12em;padding:12px 14px;border-radius:var(--r-sm);background:var(--accent-soft);color:var(--accent);user-select:all;-webkit-user-select:all}
@@ -353,7 +367,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .cele{position:fixed;inset:0;z-index:40;background:radial-gradient(120% 70% at 50% 30%,var(--reward-soft),var(--bg) 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px 24px calc(32px + env(safe-area-inset-bottom,0px));text-align:center}
 .cele canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .cele .ce-in{position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;max-width:380px}
-.stamp{font-family:var(--f-display);font-weight:700;font-size:clamp(30px,10vw,44px);letter-spacing:.04em;color:var(--reward-ink);border:4px solid currentColor;border-radius:16px;padding:8px 18px;transform:rotate(-7deg);margin:4px 0 14px}
+.stamp{font-family:var(--f-script);font-weight:400;font-size:clamp(30px,9.5vw,42px);line-height:1.15;letter-spacing:.02em;color:var(--reward-ink);border:4px solid currentColor;border-radius:16px;padding:8px 18px;transform:rotate(-7deg);margin:4px 0 14px}
 .cele .ce-emoji{font-size:44px;line-height:1}
 .cele .ce-title{font-size:20px;font-weight:700;margin:0}
 .cele .ce-sub{color:var(--muted);margin:0}
@@ -391,12 +405,58 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
   @keyframes toast{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
   @keyframes stamp{from{opacity:0;transform:rotate(-7deg) scale(2.2)}to{opacity:1;transform:rotate(-7deg) scale(1)}}
 }
+
+/* заставка: капля падает в воду, круги и волны несут надпись */
+#splash{position:fixed;inset:0;z-index:100;display:grid;place-items:center;overflow:hidden;color:#EAF4FC;background:radial-gradient(120% 80% at 50% 28%,#1C5C9C 0%,#0F3A6B 46%,#071A30 100%);transition:opacity .5s ease,visibility .5s}
+#splash.out{opacity:0;visibility:hidden;pointer-events:none}
+.sp-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(190,222,248,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(190,222,248,.08) 1px,transparent 1px);background-size:28px 28px;-webkit-mask-image:radial-gradient(70% 55% at 50% 46%,#000 15%,transparent 78%);mask-image:radial-gradient(70% 55% at 50% 46%,#000 15%,transparent 78%)}
+.sp-stage{position:relative;width:min(340px,88vw);aspect-ratio:320/300}
+.sp-svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.sp-word{position:absolute;left:0;right:0;top:14%;text-align:center;font-family:var(--f-script);font-size:clamp(76px,25vw,96px);line-height:1.05;color:#EAF4FC;text-shadow:0 0 34px rgba(109,181,240,.42);clip-path:inset(-10% 0 -10% 0)}
+.sp-sub{position:absolute;left:0;right:0;bottom:4%;text-align:center;font:600 12px/1 var(--f-body);letter-spacing:.32em;text-transform:uppercase;color:rgba(234,244,252,.66)}
+.sp-w{fill:none;stroke-linecap:round}
+.sp-drop{fill:#F0AE5E;opacity:0}
+.sp-ring{fill:none;stroke:#BFE1FA;stroke-width:1.5;vector-effect:non-scaling-stroke;opacity:0;transform-box:fill-box;transform-origin:center}
+@media (prefers-reduced-motion:no-preference){
+  .sp-grid{animation:spFade 1s .05s backwards}
+  .sp-drop{animation:spDrop .62s .2s cubic-bezier(.5,0,.9,.45) both}
+  .sp-ring{animation:spRing 1.25s .8s ease-out backwards}
+  .sp-ring.r2{animation-delay:.98s}
+  .sp-w{stroke-dasharray:1;animation:spDraw 1.1s .85s cubic-bezier(.45,.05,.2,1) backwards}
+  .sp-w.w2{animation-delay:1s}.sp-w.w3{animation-delay:1.15s}
+  .sp-word{animation:spWord 1s .9s cubic-bezier(.6,.05,.25,1) backwards}
+  .sp-sub{animation:spFade .8s 1.7s backwards}
+  .sp-flow{animation:spFlow 4s ease-in-out 2s infinite}
+  @keyframes spFade{from{opacity:0}}
+  @keyframes spDrop{0%{transform:translateY(-230px);opacity:0}12%{opacity:1}86%{transform:translateY(0);opacity:1}100%{transform:translateY(8px) scale(.2);opacity:0}}
+  @keyframes spRing{0%{transform:scale(.2);opacity:.9}100%{transform:scale(16);opacity:0}}
+  @keyframes spDraw{0%{stroke-dashoffset:1;opacity:0}3%{opacity:1}100%{stroke-dashoffset:0;opacity:1}}
+  @keyframes spWord{from{clip-path:inset(-10% 100% -10% 0)}}
+  @keyframes spFlow{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+}
 </style>
 <script>['gesturestart','gesturechange','gestureend'].forEach(function(e){document.addEventListener(e,function(ev){ev.preventDefault()})});var _t=0;document.addEventListener('touchend',function(ev){if(ev.target.closest&&ev.target.closest('input,select,textarea'))return;var n=Date.now();if(n-_t<350)ev.preventDefault();_t=n},{passive:false});</script>
 </head>
 <body>
+<div id="splash" aria-hidden="true">
+  <div class="sp-grid"></div>
+  <div class="sp-stage">
+    <svg class="sp-svg" viewBox="0 0 320 300" focusable="false">
+      <ellipse class="sp-ring" cx="160" cy="196" rx="5" ry="1.8"/>
+      <ellipse class="sp-ring r2" cx="160" cy="196" rx="5" ry="1.8"/>
+      <g class="sp-flow">
+        <path class="sp-w w3" pathLength="1" stroke="#BFE1FA" stroke-width="2" d="M-8 224 C34 206 74 244 116 224 S198 204 240 224 S300 242 328 224"/>
+        <path class="sp-w w2" pathLength="1" stroke="#3F8FD6" stroke-width="3.5" d="M-8 210 C34 192 74 230 116 210 S198 190 240 210 S300 228 328 210"/>
+        <path class="sp-w w1" pathLength="1" stroke="#7CC0F2" stroke-width="4" d="M-8 196 C34 178 74 216 116 196 S198 176 240 196 S300 214 328 196"/>
+      </g>
+      <path class="sp-drop" d="M160 172 C167 182 172 188 172 193 a12 12 0 1 1 -24 0 C148 188 153 182 160 172Z"/>
+    </svg>
+    <div class="sp-word">Поток</div>
+    <div class="sp-sub">семейные деньги</div>
+  </div>
+</div>
 <header class="top"><div class="wrap top-in">
-  <div><div class="eyebrow" id="monthLbl">&nbsp;</div><h1>Семейные фонды</h1></div>
+  <div><div class="eyebrow" id="monthLbl">&nbsp;</div><h1>Поток</h1></div>
   <div class="hdr-btns">
     <button class="icon-btn" id="setBtn" data-act="settings" aria-label="Семья и настройки" hidden></button>
   </div>
@@ -419,5 +479,16 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 <div class="cele" id="cele" hidden role="dialog" aria-modal="true" aria-labelledby="ceTitle"></div>
 <div class="toast" id="toast" hidden role="status"></div>
 <script type="module" src="app.js"></script>
+<script>
+/* Заставка: на холодном запуске, не меньше ~2,3 с и не дольше 5 с, пока грузятся данные */
+(function(){var el=document.getElementById('splash');if(!el)return;var calm=false,seen=false;
+try{calm=matchMedia('(prefers-reduced-motion: reduce)').matches;seen=sessionStorage.getItem('potok-splash')==='1';sessionStorage.setItem('potok-splash','1')}catch(e){}
+if(seen){el.remove();return}
+var t0=Date.now(),min=calm?600:2300,done=false;
+function hide(){if(done)return;done=true;el.classList.add('out');setTimeout(function(){el.remove()},650)}
+el.addEventListener('click',hide);
+(function tick(){var n=Date.now()-t0;if(n>=5000||(n>=min&&document.body.dataset.ready))hide();else setTimeout(tick,100)})();
+})();
+</script>
 </body>
 </html>
