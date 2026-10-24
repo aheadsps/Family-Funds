@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<style>html{background:#04081A}</style>
+<script>(function(){var d=document.documentElement;try{if(navigator.standalone===true||matchMedia('(display-mode: standalone)').matches)d.classList.add('pwa');if(sessionStorage.getItem('potok-splash')==='1')d.classList.add('sp-seen')}catch(e){}})();</script>
 <title>Поток</title>
 <meta name="description" content="Поток: семейный бюджет. Доходы раскладываются по фондам, траты списываются, план погашения долгов и подсказки по покупкам.">
 <meta name="theme-color" content="#F1F6FA" media="(prefers-color-scheme: light)">
@@ -24,7 +26,8 @@
 <link rel="preload" href="unbounded.woff" as="font" type="font/woff" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap"></noscript>
 <script>
 /* Тема до первой отрисовки, чтобы не мигало: auto | light | dark */
 (function(){try{var t=localStorage.getItem('ff-theme');if(t==='light'||t==='dark'){document.documentElement.dataset.theme=t;var c=t==='dark'?'#0A1520':'#F1F6FA';document.querySelectorAll('meta[name=theme-color]').forEach(function(m){m.content=c})}}catch(e){}})();
@@ -255,7 +258,7 @@ details.tx summary::-webkit-details-marker{display:none}
 
 /* вкладки */
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-nav.tabs .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-block:6px;position:relative}
+nav.tabs .wrap{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding-block:6px;position:relative}
 nav.tabs button{position:relative;z-index:1;border:0;background:none;padding:6px 2px 7px;border-radius:12px;font-weight:600;font-size:12px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px;transition:color .2s}
 nav.tabs button .ic{width:22px;height:22px}
 nav.tabs button[aria-current="page"]{color:var(--accent)}
@@ -427,6 +430,9 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
   .sp-word{animation:spUp .8s 1s cubic-bezier(.2,.8,.2,1) backwards}
   .sp-tag{animation:spUp .8s 1.25s cubic-bezier(.2,.8,.2,1) backwards}
 }
+/* приложение с экрана «Домой»: iPhone уже показал статичную заставку, продолжаем её без вступления */
+.pwa .sp-rim,.pwa .sp-liq,.pwa .sp-glow,.pwa .sp-hi,.pwa .sp-word,.pwa .sp-tag,.sp-seen .sp-rim,.sp-seen .sp-liq,.sp-seen .sp-glow,.sp-seen .sp-hi,.sp-seen .sp-word,.sp-seen .sp-tag{animation:none!important}
+html.app-ready{background:var(--bg)}
 @keyframes spRim{from{opacity:0;transform:scale(.82)}}
 @keyframes spRise{from{transform:translateY(40px)}}
 @keyframes spWave{from{transform:translateX(-50px)}to{transform:translateX(0)}}
@@ -502,6 +508,39 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 #tour .tr-btns{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
 #tour .tr-hole.noanim{transition:none}
 @media (prefers-reduced-motion:reduce){#tour .tr-hole,#tour .tr-tip{transition:none}}
+
+/* ресурсы и переводы */
+.mvs .mv{display:flex;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--line)}
+.mvs .mv:first-child{border-top:0}
+.mv .fi{opacity:1;box-shadow:none}
+.mv .mb{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.mv .mb b{font-weight:600;font-size:15px}
+.row.acc .name{font-weight:600}
+.acc-funds{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.acc-funds .chip{margin:0;font-size:12px;font-weight:500;letter-spacing:0}
+.row.place{display:grid;grid-template-columns:30px 1fr minmax(0,46%);gap:10px;align-items:center}
+.row.place .fi{opacity:1;box-shadow:none}
+.row.place .name{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.row.place select,.field.cover select{width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink)}
+.field.cover{background:var(--warn-soft);border-radius:var(--r-sm);padding:12px}
+.field.cover label{color:var(--ink);font-weight:600}
+.split{display:flex;flex-direction:column;background:var(--surface-2);border-radius:var(--r-sm);padding:4px 12px;margin-top:8px}
+.sp-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.sp-row:first-child{border-top:0}
+.sp-row small{display:block;font-size:12px;color:var(--muted);margin-top:1px}
+.sp-row b{white-space:nowrap}
+.close-goal{background:var(--goal-soft);border-color:transparent}
+.wza{display:grid;grid-template-columns:30px 1.2fr 1fr 36px;gap:8px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);box-shadow:var(--card-shadow)}
+.wza .fi{grid-column:1;grid-row:1;opacity:1;box-shadow:none}
+.wza .wzf-name{grid-column:2/4;grid-row:1}
+.wza .x{grid-column:4;grid-row:1}
+.wza .wzf-kind{grid-column:1/3;grid-row:2}
+.wza .wzf-amt{grid-column:3/5;grid-row:2;position:relative;display:block}
+.wza input,.wza select{width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink)}
+.wza input.num{text-align:right;padding-right:30px}
+.wza .sfx{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:15px;pointer-events:none}
+.wza select,.wzf-rate select,.row.place select,.field.cover select{-webkit-appearance:none;appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23889AAB' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center;background-size:16px}
+.wzf-rate select{max-width:190px}
 </style>
 <script>['gesturestart','gesturechange','gestureend'].forEach(function(e){document.addEventListener(e,function(ev){ev.preventDefault()})});var _t=0;document.addEventListener('touchend',function(ev){if(ev.target.closest&&ev.target.closest('input,select,textarea'))return;var n=Date.now();if(n-_t<350)ev.preventDefault();_t=n},{passive:false});</script>
 </head>
@@ -544,13 +583,13 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 </div></header>
 
 <main class="wrap" id="main">
-  <div class="empty"><h2>Загружаем</h2><p class="muted small">Сейчас появится вход или ваш бюджет.</p></div>
 </main>
 
 <nav class="tabs" aria-label="Разделы" hidden><div class="wrap">
   <span class="tab-ind" id="tabInd" aria-hidden="true"></span>
   <button data-tab="now" aria-current="page"><span data-ic="house"></span>Сейчас</button>
   <button data-tab="funds"><span data-ic="layers"></span>Фонды</button>
+  <button data-tab="res"><span data-ic="wallet"></span>Ресурсы</button>
   <button data-tab="debts"><span data-ic="trending-down"></span>Долги</button>
   <button data-tab="hist"><span data-ic="receipt-text"></span>История</button>
 </div></nav>
@@ -561,14 +600,16 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 <div class="toast" id="toast" hidden role="status"></div>
 <script type="module" src="app.js"></script>
 <script>
-/* Заставка: на холодном запуске, не меньше ~2,3 с и не дольше 5 с, пока грузятся данные */
-(function(){var el=document.getElementById('splash');if(!el)return;var calm=false,seen=false;
-try{calm=matchMedia('(prefers-reduced-motion: reduce)').matches;seen=sessionStorage.getItem('potok-splash')==='1';sessionStorage.setItem('potok-splash','1')}catch(e){}
-if(seen){el.remove();return}
-var t0=Date.now(),min=calm?700:2400,done=false;
-function hide(){if(done)return;done=true;el.classList.add('out');setTimeout(function(){el.remove()},650)}
-el.addEventListener('click',hide);
-(function tick(){var n=Date.now()-t0;if(n>=5000||(n>=min&&document.body.dataset.ready))hide();else setTimeout(tick,100)})();
+/* Заставка держится, пока не готов бюджет: без промежуточного экрана загрузки.
+   Первый запуск в браузере — с анимацией (не меньше ~2,3 с), с экрана «Домой» и при обновлении — сразу. */
+(function(){var el=document.getElementById('splash');if(!el)return;var d=document.documentElement;
+var calm=false;try{calm=matchMedia('(prefers-reduced-motion: reduce)').matches;sessionStorage.setItem('potok-splash','1')}catch(e){}
+var quick=d.classList.contains('pwa')||d.classList.contains('sp-seen');
+var t0=Date.now(),min=quick?0:(calm?700:2400),done=false;
+function hide(){if(done)return;done=true;d.classList.add('app-ready');el.classList.add('out');setTimeout(function(){el.remove()},quick?350:650)}
+if(quick)el.style.transitionDuration='.3s';
+el.addEventListener('click',function(){if(document.body.dataset.ready)hide()});
+(function tick(){var n=Date.now()-t0;if(n>=12000||(n>=min&&document.body.dataset.ready))hide();else setTimeout(tick,60)})();
 })();
 </script>
 </body>

@@ -1,6 +1,7 @@
-// Офлайн-режим: файлы сайта берутся из сети, а без сети из кэша.
+// Файлы сайта отдаются из кэша сразу (без белого экрана на запуске) и обновляются в фоне:
+// новая версия откроется при следующем запуске. Без сети работает из кэша.
 // Библиотеки Firebase кэшируются навсегда (их адрес содержит версию).
-const CACHE = 'potok-v11';
+const CACHE = 'potok-v12';
 const SHELL = ['./', './index.html', './app.js', './icons.js', './fb.js', './firebase-config.js', './seed.js', './unbounded.woff',
   './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 const FB = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js']
@@ -23,13 +24,12 @@ self.addEventListener('fetch', e => {
   if (url.origin === self.location.origin) {
     e.respondWith((async () => {
       const c = await caches.open(CACHE);
-      try {
-        const res = await withTimeout(fetch(req), 4000);
-        if (res.ok) c.put(req, res.clone());
-        return res;
-      } catch (err) {
-        return (await c.match(req, { ignoreSearch: true })) || (req.mode === 'navigate' ? await c.match('./index.html') : Response.error());
-      }
+      const key = req.mode === 'navigate' ? './index.html' : req;
+      const cached = await c.match(key, { ignoreSearch: true });
+      const fresh = fetch(req).then(res => { if (res.ok) c.put(key, res.clone()); return res; });
+      if (cached) { e.waitUntil(fresh.catch(() => {})); return cached; }
+      try { return await withTimeout(fresh, 8000); }
+      catch (err) { return (req.mode === 'navigate' ? await c.match('./index.html') : null) || Response.error(); }
     })());
   } else if (url.hostname === 'www.gstatic.com' && url.pathname.startsWith('/firebasejs/')) {
     e.respondWith(caches.open(CACHE).then(async c => (await c.match(req)) || fetch(req).then(res => { if (res.ok) c.put(req, res.clone()); return res; })));
