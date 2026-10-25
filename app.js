@@ -369,20 +369,21 @@ function render(){
   maybeTour();
 }
 const calm=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+const RAIL='(orientation:landscape) and (max-height:500px)';   // низкий экран: вкладки в боковой панели
 function moveTabInd(){
   const ind=$('#tabInd'); const b=document.querySelector('nav.tabs button[aria-current="page"]'); if(!ind||!b||!b.offsetWidth)return;
-  const first=!ind.style.width; if(first)ind.classList.add('noanim');
-  ind.style.width=b.offsetWidth+'px'; ind.style.transform=`translateX(${b.offsetLeft}px)`;
+  const first=!ind.dataset.ready; if(first)ind.classList.add('noanim');
+  if(matchMedia(RAIL).matches){ind.style.width='';ind.style.setProperty('--ih',b.offsetHeight+'px');ind.style.transform=`translateY(${b.offsetTop}px)`}
+  else{ind.style.removeProperty('--ih');ind.style.width=b.offsetWidth+'px';ind.style.transform=`translateX(${b.offsetLeft}px)`}
+  ind.dataset.ready='1';
   if(first)requestAnimationFrame(()=>requestAnimationFrame(()=>ind.classList.remove('noanim')));
 }
 addEventListener('resize',()=>moveTabInd());
-// iPhone после поворота иногда оставляет сдвинутую вёрстку: когда телефон снова вертикально, пересчитываем её заново
+// iPhone после поворота иногда оставляет сдвинутую вёрстку: после поворота пересчитываем её заново
 let rotT;
 function relayout(){
   clearTimeout(rotT);
   rotT=setTimeout(()=>{
-    if(window.__lockPortrait)window.__lockPortrait();
-    if(document.documentElement.dataset.rot) return;
     const d=document.documentElement, y=scrollY; d.style.display='none'; void d.offsetHeight; d.style.display=''; scrollTo(0,y);
     moveTabInd(); fitSheet();
   },300);
@@ -451,7 +452,7 @@ function paymentsBlock(){
 /* ---------- вкладка «Фонды» ---------- */
 function renderFunds(){
   const funds=activeFunds();
-  let h=`<section class="block"><h2>Очередь фондов</h2><p class="note">Каждый доход делится в три шага. 1) Налог и процентные фонды берут свою долю. 2) Обязательное на месяц: платежи (еда, связь, жильё), минимальные платежи по долгам и взносы в цели со сроком. Если денег хватает, все получают полностью, если нет, деньги делятся между ними пропорционально нехватке. 3) Всё сверх этого: награды, потом долги и цели по очереди фондов, остаток в накопления. Порядок меняется перетаскиванием за ручку справа и важен только для третьего шага.</p></section>`;
+  let h=`<section class="block"><h2>Очередь фондов</h2><details class="how"><summary>Как делятся доходы</summary><p class="note">Каждый доход делится в три шага. 1) Налог и процентные фонды берут свою долю. 2) Обязательное на месяц: платежи (еда, связь, жильё), минимальные платежи по долгам и взносы в цели со сроком. Если денег хватает, все получают полностью, если нет, деньги делятся между ними пропорционально нехватке. 3) Всё сверх этого: награды, потом долги и цели по очереди фондов, остаток в накопления. Порядок меняется перетаскиванием за ручку справа и важен только для третьего шага.</p></details></section>`;
   if(!funds.length) return h+emptyFunds();
   const {get}=stats();
   h+=`<div class="list river" id="fundList">${funds.map((f,i)=>{
@@ -584,7 +585,6 @@ function openSheet(html,onMount){
 }
 /* Шторка над клавиатурой iPhone: держим её в видимой области и не даём полю ввода уехать за край */
 function fitSheet(){
-  if(document.documentElement.dataset.rot) return;
   const sh=$('#sheet'), vv=window.visualViewport; if(!sh||sh.hidden||!vv) return;
   const kb=Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop));
   if(kb>60){sh.style.bottom=kb+'px';sh.style.maxHeight=Math.round(vv.height-8)+'px'}else{sh.style.bottom='';sh.style.maxHeight=''}
@@ -1829,7 +1829,6 @@ const TOUR=[
 const tourKey=()=>'ff-tour:'+(S.uid||'');
 let TR=null, tourWait=false;
 function maybeTour(){
-  if(document.documentElement.dataset.rot) return;
   if(TR||tourWait||S.status!=='ready'||S.tab!=='now'||!activeFunds().length||LS.get(tourKey())) return;
   tourWait=true;
   const go=()=>{

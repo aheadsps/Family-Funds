@@ -6,24 +6,6 @@
 <style>html{background:#04081A}</style>
 <script>(function(){var d=document.documentElement;try{if(navigator.standalone===true||matchMedia('(display-mode: standalone)').matches)d.classList.add('pwa');if(sessionStorage.getItem('potok-splash')==='1')d.classList.add('sp-seen')}catch(e){}})();</script>
 <title>Поток</title>
-<script>
-/* Только вертикаль: iPhone не умеет блокировать поворот сайта, поэтому в горизонтальном положении телефона
-   помечаем html атрибутом data-rot, а стили поворачивают приложение обратно. ccw: телефон повёрнут против часовой стрелки. */
-(function(){
-  function lock(){
-    var d=document.documentElement;
-    try{
-      var land=matchMedia('(orientation:landscape)').matches&&matchMedia('(pointer:coarse)').matches&&Math.min(innerWidth,innerHeight)<=500;
-      if(!land){if(d.dataset.rot){delete d.dataset.rot}return}
-      var a=(screen.orientation&&typeof screen.orientation.angle==='number')?screen.orientation.angle:(typeof window.orientation==='number'?window.orientation:90);
-      if(a>180)a-=360;
-      d.dataset.rot=a<0?'cw':'ccw';
-    }catch(e){}
-  }
-  window.__lockPortrait=lock; lock();
-  addEventListener('resize',lock); addEventListener('orientationchange',function(){setTimeout(lock,50);setTimeout(lock,350)});
-})();
-</script>
 <meta name="description" content="Поток: семейный бюджет. Доходы раскладываются по фондам, траты списываются, план погашения долгов и подсказки по покупкам.">
 <meta name="theme-color" content="#F1F6FA" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0A1520" media="(prefers-color-scheme: dark)">
@@ -460,16 +442,39 @@ html.app-ready{background:var(--bg)}
 .kind-hint p{margin:0 0 6px}.kind-hint p:last-child{margin:0}
 .kind-hint.reward{background:var(--reward-soft);color:var(--ink)}
 .kind-hint.reward b{color:var(--reward-ink)}
-/* Только вертикаль. iPhone не умеет блокировать поворот сайта, поэтому в горизонтальном положении телефона приложение
-   поворачивается обратно (html[data-rot], см. скрипт в <head>) и остаётся вертикальным относительно самого телефона.
-   Отступы безопасной зоны (--sat, --sar, --sab, --sal) переставляются под повёрнутое положение. */
 :root{--sat:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px)}
-html[data-rot]{overflow:hidden}
-html[data-rot] body{position:fixed;top:0;left:0;width:100vh;width:100dvh;height:100vw;min-height:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:none;transform-origin:0 0}
-html[data-rot="ccw"]{--sat:env(safe-area-inset-left,0px);--sab:env(safe-area-inset-right,0px);--sal:env(safe-area-inset-bottom,0px);--sar:env(safe-area-inset-top,0px)}
-html[data-rot="ccw"] body{transform:translateY(100vh) rotate(-90deg);transform:translateY(100dvh) rotate(-90deg)}
-html[data-rot="cw"]{--sat:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-left,0px);--sal:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-bottom,0px)}
-html[data-rot="cw"] body{transform:translateX(100vw) rotate(90deg)}
+/* Горизонтальное положение телефона (низкий экран): вкладки уходят в боковую панель, шапка тонкая, место отдано содержимому */
+@media (orientation:landscape) and (max-height:500px){
+  body{padding-left:var(--sal)}
+  body:has(nav.tabs:not([hidden])){padding-left:calc(84px + var(--sal))}
+  .wz-foot{padding-block:8px calc(8px + var(--sab))}
+  nav.tabs{top:0;right:auto;width:calc(84px + var(--sal));border-top:0;border-right:1px solid var(--line);padding:var(--sat) 0 var(--sab) var(--sal)}
+  nav.tabs .wrap{display:flex;flex-direction:column;justify-content:center;gap:2px;height:100%;max-width:none;margin:0;padding:6px}
+  nav.tabs button{flex:none;padding:7px 2px 6px}
+  .tab-ind{left:6px;right:6px;top:0;bottom:auto;width:auto;height:var(--ih,0px);transition:transform .32s cubic-bezier(.3,.8,.25,1),height .32s cubic-bezier(.3,.8,.25,1)}
+  .tab-ind.noanim{transition:none}
+  header.top .wrap,main.wrap{max-width:680px;padding-left:16px}
+  .top-in{padding-block:6px}
+  .brand-tag{display:none}
+  .brand-mark{width:30px;height:30px;border-radius:8px}
+  h1.brand-name{font-size:18px}
+  .icon-btn{width:34px;height:34px}
+  main{padding-block:12px calc(16px + var(--sab));gap:18px}
+  .toast{bottom:calc(14px + var(--sab));left:calc(50% + 42px)}
+  .sheet{max-height:100%;border-radius:14px 14px 0 0}
+  .sheet .wrap{max-width:680px;padding-block:12px 4px;gap:10px}
+  input.big{padding-block:9px}
+  .emojis{grid-template-columns:repeat(16,1fr);gap:4px}
+  .emojis button{font-size:16px;border-radius:8px}
+  .cele{overflow-y:auto;justify-content:flex-start;padding-block:20px calc(20px + var(--sab))}
+  .cele>:first-child{margin-top:auto}
+  .cele>:last-child{margin-bottom:auto}
+}
+.how summary{cursor:pointer;list-style:none;color:var(--accent);font-weight:600;font-size:14px;padding:4px 0;display:flex;align-items:center;gap:6px}
+.how summary::-webkit-details-marker{display:none}
+.how summary::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .2s}
+.how[open] summary::after{transform:rotate(-135deg) translateY(-2px)}
+.how p{margin:8px 0 0}
 .tgls{display:grid;gap:8px}
 .tgl{display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--line);background:var(--surface);border-radius:var(--r-sm);cursor:pointer;transition:background-color .2s,border-color .2s}
 .tgl.on{border-color:var(--accent);background:var(--accent-soft)}
