@@ -56,5 +56,10 @@ await t('НОВОЕ: документ с более чем 60 полями от�
   await assertFails(setDoc(doc(as('bob'),'households/h1/tx/big'), big));
   const ok = Object.fromEntries(Array.from({ length: 60 }, (_, i) => ['k'+i, i]));
   await assertSucceeds(setDoc(doc(as('bob'),'households/h1/tx/ok'), ok)); });
+await t('НОВОЕ: фонд наград (funds/reward) создать и менять можно, удалить нельзя', async () => { await seed(); const d = as('bob');
+  await assertSucceeds(setDoc(doc(d,'households/h1/funds/reward'), { name:'Награды', kind:'reward', value:10 }));
+  await assertSucceeds(updateDoc(doc(d,'households/h1/funds/reward'), { value:15 }));
+  await assertFails(deleteDoc(doc(d,'households/h1/funds/reward')));
+  await assertSucceeds(deleteDoc(doc(d,'households/h1/funds/f1'))); });
 console.log(results.map(r => r.join(' ')).join('\n')); console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
 await env.cleanup(); process.exit(0);

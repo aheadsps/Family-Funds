@@ -8,9 +8,8 @@ const KINDS = {
   goal:{label:'Накопить сумму', short:'цель'},
   debt:{label:'Погасить долг', short:'долг'},
   reward:{label:'Награды: % от денег сверх плана', short:'награды'},
-  rest:{label:'Всё, что осталось', short:'остаток'}
+  rest:{label:'Весь остаток', short:'остаток'}
 };
-const KIND_UI = {monthly:'Платёж в месяц',percent:'% с дохода',rest:'Весь остаток',goal:'🎯 Накопить сумму',debt:'💳 Погасить долг'};
 const KIND_HINT = {
   monthly:'Каждый месяц фонд набирает свою сумму. Если доход пришёл частями, каждая часть делится между такими фондами пропорционально. Остаток переходит на следующий месяц, перерасход закроет следующий доход.',
   percent:'С каждого поступления фонд сразу берёт свой процент, сколько бы ни пришло. Для налога и подушки безопасности.',
@@ -33,8 +32,9 @@ const GUESS = [[/налог/i,'🧾'],[/квартир|аренд|ипотек|�
   [/кредитк|кредит|займ|рассроч/i,'💳'],[/друг|долг/i,'🤝'],[/подушк|резерв/i,'🛟'],[/наград|радост/i,'🎁'],[/накоплен|сбереж/i,'🏦'],[/отпуск|путешеств|переезд|зеланд/i,'✈️'],
   [/подписк/i,'📺'],[/инвест|акци|бирж/i,'📈'],[/земл|участ/i,'🌿'],[/покупка:/i,'🎯'],[/одежд/i,'👕'],[/живот|кот|собак/i,'🐾']];
 const KIND_EMOJI = {percent:'🧾',monthly:'💰',goal:'🎯',debt:'💳',reward:'🎁',rest:'🏦'};
-function fundEmoji(f){if(!f)return '•';if(f.icon)return f.icon;const g=GUESS.find(([re])=>re.test(f.name||''));return g?g[1]:(KIND_EMOJI[f.kind]||'💰')}
-function fundIcon(f,cls=''){if(!f||f==='_free')return `<span class="fi k-free ${cls}" aria-hidden="true">🪙</span>`;return `<span class="fi k-${f.kind} ${cls}" aria-hidden="true">${fundEmoji(f)}</span>`}
+function kindLabel(f){return f.kind==='goal'?(f.isDebt?'Долг: копим на платёж':KINDS.goal.label):(KINDS[f.kind]&&KINDS[f.kind].label)||f.kind}
+function fundEmoji(f){if(!f)return '•';if(f.icon)return f.icon;const g=GUESS.find(([re])=>re.test(f.name||''));return g?g[1]:(KIND_EMOJI[f.kind==='goal'&&f.isDebt?'debt':f.kind]||'💰')}
+function fundIcon(f,cls=''){if(!f||f==='_free')return `<span class="fi k-free ${cls}" aria-hidden="true">🪙</span>`;return `<span class="fi k-${f.kind==='goal'&&f.isDebt?'debt':f.kind} ${cls}" aria-hidden="true">${fundEmoji(f)}</span>`}
 function fundById(id){return S.funds.find(x=>x.id===id)}
 
 function curMonth(d=new Date()){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
@@ -55,6 +55,8 @@ function fundName(id){if(id==='_free')return 'Без фонда';const f=S.funds
 /* ---------- calculations ----------
    Фонд-цель помнит, сколько в него накопили (collected), и отдельно, сколько в нём лежит (balance).
    Траты уменьшают balance, но не collected: цель не просит докладывать потраченное. */
+// Процент с дохода: фонд «% с дохода», а также цель или долг, у которых правило «процент» (поле pct)
+const pctRate=f=>f.kind==='percent'?(+f.value||0):((f.kind==='goal'||f.kind==='debt')&&+f.pct>0?+f.pct:0);
 const G0=()=>({alloc:0,allocM:0,spent:0,spentM:0,thru:0});
 function coverOf(t){const amt=+t.amount||0;return t.cover&&t.cover.fid&&+t.cover.amt>0?Math.min(amt,Math.round(+t.cover.amt)):0}
 function stats(skip){
@@ -145,8 +147,13 @@ function distribute(amount,taxable,o={}){
   const funds=o.funds||activeFunds(), get=o.get||stats(o.skip).get;
   const give={}; funds.forEach(f=>give[f.id]=0);
   let rem=Math.max(0,Math.round(amount));
-  if(!o.noPct) for(const f of funds) if(f.kind==='percent'&&!(f.taxOnly&&!taxable)){const g=Math.min(rem,Math.round(amount*(+f.value||0)/100));give[f.id]+=g;rem-=g}
-  const req=funds.map(f=>({f,r:Math.max(0,Math.round(monthReq(f,get)))})).filter(x=>x.r>0);
+  if(!o.noPct) for(const f of funds){
+    const pr=pctRate(f); if(!(pr>0)||(f.kind==='percent'&&f.taxOnly&&!taxable)) continue;
+    let g=Math.min(rem,Math.round(amount*pr/100));
+    if(f.kind!=='percent'){const s=fstate(f,get);g=Math.min(g,Math.max(0,Math.round(f.kind==='debt'?s.remaining:s.left)))}   // цель и долг берут процент, пока не накопят или не погасят
+    give[f.id]+=g;rem-=g;
+  }
+  const req=funds.map(f=>({f,r:Math.max(0,Math.round(monthReq(f,get))-give[f.id])})).filter(x=>x.r>0);   // минус то, что фонд уже взял процентом
   const Q=sum(req.map(x=>x.r)); let mandatory=0;
   if(Q>0){
     if(rem<Q){
@@ -160,6 +167,7 @@ function distribute(amount,taxable,o={}){
   for(const f of funds){
     if(rem<=0) break;
     if(f.kind!=='debt'&&f.kind!=='goal') continue;
+    if(+f.pct>0) continue;   // с правилом «процент» фонд берёт только свой процент
     const s=fstate(f,get); const top=f.kind==='debt'?s.remaining:(+f.cap>0?s.need:s.left);
     const g=Math.max(0,Math.min(rem,Math.round(top-give[f.id]))); give[f.id]+=g; rem-=g;
   }
@@ -178,7 +186,7 @@ function monthPicture(){
   const monthly=funds.filter(f=>f.kind==='monthly');
   const needMonthly=sum(monthly.map(f=>fstate(f,get).need));
   const totalMonthly=sum(monthly.map(f=>+f.value||0));
-  const pct=sum(funds.filter(f=>f.kind==='percent').map(f=>+f.value||0));
+  const pct=sum(funds.map(f=>{const r=pctRate(f);if(!(r>0))return 0;if(f.kind==='percent')return r;const s=fstate(f,get);return (f.kind==='debt'?s.remaining:s.left)>0.5?r:0}));
   const dl=[];
   for(const f of funds.filter(f=>(f.kind==='debt'||f.kind==='goal')&&f.deadline)){
     const s=fstate(f,get); const d=dlPlan(f,s); dl.push({f,left:d.left,ml:d.ml,perMonth:d.perMonth,interest:d.interest,stillThisMonth:d.ml>0?d.still:0});
@@ -207,7 +215,9 @@ function tips(P){
   if(P.stillNet<=0.5){const next=funds.find(f=>(f.kind==='debt'||f.kind==='goal')&&fstate(f,get).need>0.5)||funds.find(f=>f.kind==='rest');
     const rw=funds.some(f=>f.kind==='reward'&&(+f.value||0)>0);
     if(next) out.push({tone:'info',title:`Свободные деньги пойдут в «${next.name}»`,text:(rw?'Сначала часть уйдёт в награды. ':'')+(next.kind==='rest'?'Все цели и долги закрыты, остаток копится здесь.':`${next.kind==='debt'?'Осталось погасить':'Осталось накопить'} ${fmt(fstate(next,get).need)}.`)});}
-  for(const f of funds){if(f.kind!=='goal'||f.wishId)continue;const s=fstate(f,get);if(s.left<=0.5&&(+f.value||0)>0)out.push({tone:'good',title:`«${f.name}» накоплено`,text:s.balance>0.5?`В фонде ${fmt(s.balance)}. Тратьте из него, а когда задача выполнена, закройте цель: остаток уйдёт, куда скажете.`:'Деньги потрачены. Закройте цель, чтобы она не висела в списке.',act:{label:'Открыть',act:'edit-fund',id:f.id}})}
+  for(const f of funds){if(f.kind!=='goal'||f.wishId)continue;const s=fstate(f,get);if(s.left<=0.5&&(+f.value||0)>0){
+    if(f.isDebt) out.push({tone:'good',title:`На долг «${f.name}» накоплено`,text:s.balance>0.5?`В фонде ${fmt(s.balance)}. Внесите платёж в банк и запишите его: он спишется из фонда.`:'Платёж записан. Закройте фонд, чтобы он не висел в списке.',act:s.balance>0.5?{label:'Записать платёж',act:'pay-lump',id:f.id}:{label:'Открыть',act:'edit-fund',id:f.id}});
+    else out.push({tone:'good',title:`«${f.name}» накоплено`,text:s.balance>0.5?`В фонде ${fmt(s.balance)}. Тратьте из него, а когда задача выполнена, закройте цель: остаток уйдёт, куда скажете.`:'Деньги потрачены. Закройте цель, чтобы она не висела в списке.',act:{label:'Открыть',act:'edit-fund',id:f.id}})}}
   for(const f of funds){const s=fstate(f,get);if(f.kind!=='debt'&&s.balance<-0.5) out.push({tone:'bad',title:`«${f.name}» в минусе на ${fmt(-s.balance)}`,text:'Потратили больше, чем было в фонде. '+(f.kind==='monthly'?'Следующий доход закроет минус в первую очередь, до остальных платежей.':f.kind==='goal'?'Закройте цель или переведите деньги из другого фонда: цель сама минус не покрывает.':'Фонд будет пополняться из новых доходов по своему правилу, но быстрее закрыть минус переводом из другого фонда.')})}
   if(P.free>0.5) out.push({tone:'warn',title:`${fmt(P.free)} лежат без фонда`,text:'Так бывает после удаления фонда или когда все фонды заполнены.',act:{label:'Разложить по фондам',act:'distribute-free'}});
   const noMin=funds.filter(f=>f.kind==='debt'&&!(+f.minPay)&&fstate(f,get).remaining>0.5);
@@ -265,10 +275,7 @@ function analyzeWish(price,fundId,wishId){
   if(rfs.length){
     const r=rfs.reduce((a,f)=>bal(f.id)>bal(a.id)?f:a,rfs[0]); const b=bal(r.id); const perM=F.base*(+r.value||0)/100;
     if(b>=price) push({tone:'good',title:`Из фонда «${r.name}»`,text:`Это деньги на радости, их тратят без ущерба для плана. После покупки останется ${fmt(b-price)}.`,buy:{src:r.id}});
-    else push({tone:'info',title:`В «${r.name}» ${fmt(b)}`,text:`Не хватает ${fmt(price-b)}.`+(perM>0?` Фонд пополняется примерно на ${fmt(perM)} в месяц, нужная сумма соберётся ${monthIn(Math.ceil((price-b)/perM))}.`:' Фонд пополняется, когда доход превышает обязательные платежи.')});
-  } else {
-    const perM=F.base*REWARD_DEFAULT/100;
-    push({tone:'info',title:'Включить фонд наград',text:`С каждого дохода ${REWARD_DEFAULT}% денег, оставшихся после обязательных платежей, будут откладываться на покупки для себя${perM>0?`, примерно ${fmt(perM)} в месяц`:''}. Тратить их можно без ущерба для плана.`,action:'add-reward'});
+    else push({tone:'info',title:`В «${r.name}» ${fmt(b)}`,text:`Не хватает ${fmt(price-b)}.`+(perM>0?` Фонд пополняется примерно на ${fmt(perM)} в месяц, нужная сумма соберётся ${monthIn(Math.ceil((price-b)/perM))}.`:(+r.value>0?' Фонд пополняется, когда доход превышает обязательные платежи.':' Сейчас у фонда 0%: задайте процент в его настройках, и он начнёт пополняться.'))});
   }
   // 3. Выбранный фонд расходов на месяц
   const chosen=fundId&&fundId!=='_free'?byId(fundId):null;
@@ -330,7 +337,7 @@ function wishBox(v){
   if(!v) return `<p class="note">Введите цену, и здесь появятся варианты.</p>`;
   const btn=(o,i)=>o.buy?`<div class="opt-act"><button class="btn sm ${o.tone==='good'?'primary':'ghost'}" data-wopt="${i}">Купить из «${esc(fundName(o.buy.src))}»</button></div>`
     :o.goal?`<div class="opt-act"><button class="btn sm ghost" data-wopt="${i}">Начать копить</button></div>`
-    :o.action==='add-reward'?`<div class="opt-act"><button class="btn sm ghost" data-wopt="${i}">Включить фонд наград</button></div>`:'';
+    :'';
   return `<div class="verdict ${v.tone}"><b>${esc(v.title)}</b>${v.lines.map(l=>`<p>${esc(l)}</p>`).join('')}</div>
   ${v.opts.length?`<div class="eyebrow">Варианты</div><div class="tips">${v.opts.map((o,i)=>`<div class="tip ${o.tone}"><span class="dot"></span><div><b>${esc(o.title)}</b><span class="muted small">${esc(o.text)}</span>${btn(o,i)}</div></div>`).join('')}</div>`:''}`;
 }
@@ -411,9 +418,9 @@ function fundRowNow(f,get,mi){
   const s=fstate(f,get), v=+f.value||0; let right='',sub='',pc=null;
   if(f.kind==='monthly'){const cov=Math.max(0,v-s.need);pc=v?cov/v:1;right=`${fmt(cov)} из ${fmt(v)}`;sub=`в фонде <span class="${s.balance<0?'neg':''}">${fmt(s.balance)}</span> · потрачено в ${PREP[mi]} ${fmt(s.spentM)}`+(+f.payDay?` · платёж ${Math.round(+f.payDay)}‑го`:'')}
   else if(f.kind==='goal'){const used=Math.max(0,s.collected-s.balance);pc=v?s.collected/v:0;right=`${fmt(s.collected)} из ${fmt(v)}`;
-    sub=(s.left>0.5?`осталось накопить ${fmt(s.left)}`:'накоплено')+(used>0.5?` · в фонде ${fmt(s.balance)}, потрачено ${fmt(used)}`:'')+(s.left>0.5&&+f.cap?` · по ${fmt(f.cap)} в месяц`:'')+(s.left>0.5&&f.deadline?` · до ${dateLabel(f.deadline)}`:'')}
+    sub=(f.isDebt?'на долг · ':'')+(s.left>0.5?`осталось накопить ${fmt(s.left)}`:f.isDebt?'накоплено, внесите платёж':'накоплено')+(s.left>0.5&&+f.pct?` · ${nf2.format(+f.pct)}% с дохода`:'')+(used>0.5?` · в фонде ${fmt(s.balance)}, потрачено ${fmt(used)}`:'')+(s.left>0.5&&+f.cap?` · по ${fmt(f.cap)} в месяц`:'')+(s.left>0.5&&f.deadline?` · до ${dateLabel(f.deadline)}`:'')}
   else if(f.kind==='reward'){right=`<span class="${s.balance<0?'neg':''}">${fmt(s.balance)}</span>`;sub=`${nf.format(v)}% от денег сверх обязательных платежей · на покупки для себя`}
-  else if(f.kind==='debt'){pc=v?s.paid/v:1;right=s.remaining>0?`осталось ${fmt(s.remaining)}`:'закрыт';sub=`погашено ${fmt(s.paid)} из ${fmt(v)}`+(+f.rate?` · ${nf2.format(+f.rate)}% годовых`:'')+(f.deadline?` · до ${dateLabel(f.deadline)}`:'')}
+  else if(f.kind==='debt'){pc=v?s.paid/v:1;right=s.remaining>0?`осталось ${fmt(s.remaining)}`:'закрыт';sub=`погашено ${fmt(s.paid)} из ${fmt(v)}`+(+f.rate?` · ${nf2.format(+f.rate)}% годовых`:'')+(+f.pct?` · ${nf2.format(+f.pct)}% с дохода`:'')+(f.deadline?` · до ${dateLabel(f.deadline)}`:'')}
   else if(f.kind==='percent'){right=`<span class="${s.balance<0?'neg':''}">${fmt(s.balance)}</span>`;sub=`${nf.format(v)}% ${f.taxOnly?'с облагаемых доходов':'с каждого дохода'}`}
   else {right=`<span class="${s.balance<0?'neg':''}">${fmt(s.balance)}</span>`;sub='получает всё, что осталось'}
   return `<button class="frow k-${f.kind}" data-act="edit-fund" data-id="${esc(f.id)}" ${S.canWrite?'':'disabled'}>${fundIcon(f)}<span class="fb"><span class="row-main"><span class="name">${esc(f.name)}</span><span class="amt">${right}</span></span>${pc!==null?`<span class="bar"><i style="width:${Math.max(0,Math.min(100,pc*100)).toFixed(1)}%"></i></span>`:''}<span class="note">${sub}</span></span></button>`;
@@ -436,14 +443,14 @@ function renderFunds(){
   const {get}=stats();
   h+=`<div class="list river" id="fundList">${funds.map((f,i)=>{
     const s=fstate(f,get), v=+f.value||0;
-    const val=f.kind==='percent'||f.kind==='reward'?`${nf.format(v)}%`:f.kind==='rest'?'':fmt(v)+(f.kind==='monthly'?' в месяц':'')+(+f.cap?` · по ${fmt(f.cap)} в месяц`:'');
+    const val=f.kind==='percent'||f.kind==='reward'?`${nf.format(v)}%`:f.kind==='rest'?'':fmt(v)+(f.kind==='monthly'?' в месяц':'')+(+f.cap?` · по ${fmt(f.cap)} в месяц`:'')+(+f.minPay?` · платёж ${fmt(f.minPay)}`:'')+(+f.pct?` · ${nf2.format(+f.pct)}% с дохода`:'');
     const st=[f.kind==='debt'?`осталось ${fmt(s.remaining)}`:f.kind==='goal'?`накоплено ${fmt(s.collected)}`+(s.collected-s.balance>0.5?`, в фонде ${fmt(s.balance)}`:''):`в фонде ${fmt(s.balance)}`];
     if(f.deadline) st.push(`до ${dateLabel(f.deadline)}`);
     if(+f.payDay) st.push(`платёж ${Math.round(+f.payDay)}‑го`);
     if(f.kind==='debt'&&+f.rate) st.push(`${nf2.format(+f.rate)}%`);
     return `<div class="fund k-${f.kind}" data-id="${esc(f.id)}">${fundIcon(f)}
-      <button class="body" data-act="edit-fund" data-id="${esc(f.id)}" ${S.canWrite?'':'disabled'}><span class="name">${esc(f.name)}</span><span class="note"><span class="chip kind">${KINDS[f.kind]?.label||f.kind}</span>${val}</span><span class="note">${st.join(' · ')}</span></button>
-      ${S.canWrite?`<button class="grip" data-id="${esc(f.id)}" aria-label="Перетащить «${esc(f.name)}». Стрелки вверх и вниз меняют позицию, сейчас ${i+1} из ${funds.length}">${ic('grip-vertical')}</button><button class="del" data-act="ask-del-fund" data-id="${esc(f.id)}" aria-label="Удалить фонд «${esc(f.name)}»">${ic('trash')}</button>`:'<span></span><span></span>'}
+      <button class="body" data-act="edit-fund" data-id="${esc(f.id)}" ${S.canWrite?'':'disabled'}><span class="name">${esc(f.name)}</span><span class="note"><span class="chip kind">${esc(kindLabel(f))}</span>${val}</span><span class="note">${st.join(' · ')}</span></button>
+      ${S.canWrite?`<button class="grip" data-id="${esc(f.id)}" aria-label="Перетащить «${esc(f.name)}». Стрелки вверх и вниз меняют позицию, сейчас ${i+1} из ${funds.length}">${ic('grip-vertical')}</button>${f.kind==='reward'?'<span></span>':`<button class="del" data-act="ask-del-fund" data-id="${esc(f.id)}" aria-label="Удалить фонд «${esc(f.name)}»">${ic('trash')}</button>`}`:'<span></span><span></span>'}
       ${S.confirmFund===f.id?`<div class="confirm"><span>Удалить «${esc(f.name)}»?${f.kind!=='debt'&&s.balance>0.5?` В нём лежит ${fmt(s.balance)}, эти деньги перейдут в «Без фонда».`:''} Записи в истории останутся.</span><span class="confirm-btns"><button class="btn sm danger" data-act="del-fund" data-id="${esc(f.id)}">Удалить</button><button class="btn sm ghost" data-act="cancel-del">Отмена</button></span></div>`:''}
     </div>`}).join('')}</div>`;
   if(S.canWrite) h+=`<button class="btn primary" data-act="new-fund">${ic('plus')}Добавить фонд</button>`;
@@ -451,9 +458,21 @@ function renderFunds(){
 }
 
 /* ---------- вкладка «Долги» ---------- */
+// Долги, которые закрываются одним платежом: копим в фонде, потом вносим (фонд «накопить сумму» с тумблером «долг»)
+function lumpDebts(){
+  const L=activeFunds().filter(f=>f.kind==='goal'&&f.isDebt); if(!L.length) return '';
+  const {get}=stats();
+  return `<section class="block"><h2>Копим на долг</h2><p class="note">Эти долги закрываются одним платежом: деньги копятся в фонде, а когда накопится вся сумма, внесите её в банк и запишите платёж.</p><div class="list river">${L.map(f=>{
+    const s=fstate(f,get), v=+f.value||0, pc=v?s.collected/v:1;
+    return `<button class="frow k-debt" data-act="edit-fund" data-id="${esc(f.id)}" ${S.canWrite?'':'disabled'}>${fundIcon(f)}<span class="fb"><span class="row-main"><span class="name">${esc(f.name)}</span><span class="amt">${fmt(s.collected)} из ${fmt(v)}</span></span><span class="bar"><i style="width:${Math.max(0,Math.min(100,pc*100)).toFixed(1)}%"></i></span><span class="note">${s.left>0.5?`осталось накопить ${fmt(s.left)}`:'накоплено, внесите платёж'}${f.deadline?` · до ${dateLabel(f.deadline)}`:''}</span></span></button>`}).join('')}</div></section>`;
+}
 function renderDebts(){
+  const lump=lumpDebts();
+  if(!debtList().length) return lump||`<section class="block"><h2>План погашения</h2></section><div class="empty"><h2>Долгов в фондах нет</h2><p class="muted small">Добавьте фонд и включите тумблер «Это долг»: кредитку, займ, долг другу. Здесь появится план погашения и дата, когда семья будет свободна от долгов.</p>${S.canWrite?`<button class="btn primary" data-act="new-debt">${ic('plus')}Добавить долг</button>`:''}</div>`;
+  return debtPlan()+lump;
+}
+function debtPlan(){
   const all=debtList(); const open=all.filter(d=>d.bal>0.5);
-  if(!all.length) return `<section class="block"><h2>План погашения</h2></section><div class="empty"><h2>Долгов в фондах нет</h2><p class="muted small">Добавьте фонд «Погасить долг»: кредитку, займ, долг другу. Здесь появится план погашения и дата, когда семья будет свободна от долгов.</p>${S.canWrite?`<button class="btn primary" data-act="new-debt">${ic('plus')}Добавить долг</button>`:''}</div>`;
   if(!open.length) return `<section class="hero"><div class="eyebrow">Долги</div><div class="fig ok">Все долги закрыты</div><div class="note">Свободные деньги идут в цели и накопления.</div></section><div class="list river">${all.map((d,i)=>debtRow(d,i,null)).join('')}</div>`;
   const strat=stratOf(); const B=debtBudget(); const res={}; for(const k of Object.keys(STRATS)) res[k]=simulate(k,B.v);
   const r=res[strat]; const total=sum(open.map(d=>d.bal));
@@ -491,6 +510,7 @@ function debtRow(d,i,r){
   else{
     parts.push(d.rate>0?`${nf2.format(d.rate)}% годовых`:d.f.rateSet?'без процентов':'<span class="chip v-warn">укажите ставку</span>');
     if(d.min>0) parts.push(`мин. ${fmt(d.min)}`);
+    if(+d.f.pct) parts.push(`${nf2.format(+d.f.pct)}% с дохода`);
     if(+d.f.payDay) parts.push(`платёж ${Math.round(+d.f.payDay)}‑го`);
     if(r&&r.at&&r.at[d.f.id]&&!r.stuck) parts.push(`закроется ${monthIn(r.at[d.f.id])}`);
   }
@@ -703,82 +723,130 @@ function openExpense(tx,preset){
     });
   });
 }
+/* ---------- окно фонда ----------
+   Фонд задают три вещи: как он получает деньги (платёж в месяц, процент с дохода, весь остаток),
+   тумблер «Это долг» и тумблер «Накопить сумму». В базе это те же виды: monthly, percent, rest, goal, debt, reward.
+   goal с isDebt: долг, который закрывается одним платежом (копим сумму, потом вносим). */
+const RULE_UI={monthly:'Платёж в месяц',percent:'% с дохода',rest:'Весь остаток'};
+function fundShape(f){
+  if(f.kind==='reward') return {rule:'percent',debt:false,accum:false,reward:true};
+  const pct=+f.pct>0;
+  if(f.kind==='goal') return {rule:pct?'percent':+f.cap>0?'monthly':'rest',debt:!!f.isDebt,accum:true,reward:false};
+  if(f.kind==='debt') return {rule:pct?'percent':+f.minPay>0?'monthly':'rest',debt:true,accum:false,reward:false};
+  return {rule:f.kind,debt:false,accum:false,reward:false};
+}
+// Что сохраняется в фонде при выбранных настройках. value долга считает вызывающий (остаток + уже погашенное)
+function fundFields(st,v){
+  const kind=st.reward?'reward':st.accum?'goal':st.debt?'debt':st.rule;
+  const pctRule=st.reward||st.rule==='percent', amtRule=!st.reward&&st.rule==='monthly', plan=kind==='goal'||kind==='debt';
+  const f={kind,taxOnly:kind==='percent'?!!v.tax:false,deadline:plan?(v.dl||''):'',
+    cap:kind==='goal'&&amtRule?v.amt:0,pct:plan&&pctRule?v.pct:0,isDebt:kind==='goal'&&st.debt,
+    payDay:(kind==='monthly'||kind==='debt')&&v.day>=1&&v.day<=31?v.day:0,
+    rate:kind==='debt'?Math.round(v.rate*100)/100:0,rateSet:kind==='debt'&&!!v.rateSet,minPay:kind==='debt'&&amtRule?v.amt:0};
+  f.value=kind==='goal'?v.tgt:kind==='monthly'?v.amt:kind==='percent'||kind==='reward'?v.pct:0;
+  return f;
+}
+function ruleHint(st){
+  const {rule,debt,accum}=st;
+  if(debt&&accum) return `<p>Для долга, который закрывается одним платежом, например рассрочка у приставов без ставки. Деньги копятся в фонде. Когда накопится вся сумма, внесите платёж в банк и запишите его: он спишется из фонда.</p><p>${{monthly:'Откладывается указанная сумма каждый месяц.',percent:'Откладывается процент с каждого дохода.',rest:'Откладывается из денег сверх обязательного, по очереди фондов.'}[rule]}</p>`;
+  if(accum) return `<p>${{monthly:'Откладывает указанную сумму каждый месяц, пока не накопится нужная.',percent:'С каждого дохода берёт свой процент, пока не накопится нужная сумма.',rest:'Копит до нужной суммы из денег сверх обязательного, по очереди фондов.'}[rule]} Потом фонд перестаёт брать деньги. Тратить из него можно в любой момент: потраченное докладывать не нужно.</p>`;
+  if(debt) return `<p>${{monthly:KIND_HINT.debt,percent:'С каждого дохода на погашение долга идёт процент, пока долг не закроется. Когда долг закрыт, фонд выключается, а вам положен бонус на покупку.',rest:'Долг гасится только деньгами сверх обязательного, по очереди фондов. Когда долг закрыт, фонд выключается, а вам положен бонус на покупку.'}[rule]}</p>`;
+  return `<p>${KIND_HINT[rule]}</p>`;
+}
 function openFund(f,kindPreset){
-  const isNew=!f; f=f||{kind:kindPreset||'monthly',name:'',value:'',taxOnly:true};
+  const isNew=!f; f=f||{kind:'monthly',name:'',value:'',taxOnly:true};
   const {get}=stats(); const s=isNew?{balance:0,remaining:0,moved:0,paid:0}:fstate(f,get);
+  const st0=isNew?{rule:'monthly',debt:kindPreset==='debt',accum:kindPreset==='goal',reward:false}:fundShape(f);
+  const isReward=st0.reward;
   const cur=f.kind==='debt'?s.remaining:s.balance;
+  const amt0=f.kind==='goal'?f.cap:f.kind==='debt'?f.minPay:f.kind==='monthly'?f.value:0;
+  const pct0=f.kind==='percent'||f.kind==='reward'?f.value:f.pct;
+  const tgt0=f.kind==='goal'?f.value:0;
   let icon=f.icon||'';
-  openSheet(`${sheetHead(isNew?(f.kind==='debt'?'Новый долг':'Новый фонд'):'Фонд')}
-  <div class="field"><label for="fName">Название</label><input id="fName" value="${esc(f.name)}" placeholder="${f.kind==='debt'?'Например, Кредитка':'Например, Квартира'}"></div>
+  openSheet(`${sheetHead(isNew?(st0.debt&&!st0.accum?'Новый долг':'Новый фонд'):'Фонд')}
+  <div class="field"><label for="fName">Название</label><input id="fName" value="${esc(f.name)}" placeholder="${st0.debt?'Например, Кредитка':'Например, Квартира'}"></div>
   <div class="field"><span class="lbl">Иконка <span class="muted" id="fIcoNote"></span></span><div class="emojis" id="fIco">${EMOJI.map(e=>`<button type="button" data-e="${e}" aria-pressed="${icon===e}" aria-label="Иконка ${e}">${e}</button>`).join('')}</div></div>
-  <input type="hidden" id="fKind" value="${esc(f.kind)}">
-  <div class="field"><span class="lbl">Как фонд забирает деньги</span>
-    <div class="seg three kind-seg" id="fKindOps">${['monthly','percent','rest'].map(k=>`<button type="button" data-k="${k}" aria-pressed="${f.kind===k}">${KIND_UI[k]}</button>`).join('')}</div>
-    <span class="lbl kind-or">Или у фонда есть цель</span>
-    <div class="kind-tags" id="fKindTags">${['goal','debt'].map(k=>`<button type="button" class="kind-tag" data-k="${k}" aria-pressed="${f.kind===k}">${KIND_UI[k]}</button>`).join('')}</div>
-    <button type="button" class="kind-reward" data-k="reward" aria-pressed="${f.kind==='reward'}"><span class="kr-ico">🎁</span><span class="kr-txt"><b>Фонд наград</b><span>Деньги на покупки для себя из того, что осталось сверх плана</span></span></button>
-    <div class="kind-hint" id="fKindHint"></div>
-  </div>
-  <div class="field" id="fValBox"><label for="fVal" id="fValLbl"></label><input id="fVal" inputmode="decimal" value="${f.value!==''&&f.value!=null&&f.kind!=='debt'?nf.format(f.value):''}"></div>
+  ${isReward?'':`<div class="field"><span class="lbl">Как фонд получает деньги</span>
+    <div class="seg three kind-seg" id="fRule">${Object.keys(RULE_UI).map(k=>`<button type="button" data-k="${k}" aria-pressed="${st0.rule===k}">${RULE_UI[k]}</button>`).join('')}</div></div>
+  <div class="field tgls">
+    <label class="tgl"><input type="checkbox" id="fDebtOn" ${st0.debt?'checked':''}><span class="tt"><b>Это долг</b><span>Фонд гасит долг: можно указать ставку и день платежа.</span></span></label>
+    <label class="tgl"><input type="checkbox" id="fAccOn" ${st0.accum?'checked':''}><span class="tt"><b>Накопить сумму</b><span>Фонд копит до нужной суммы и потом перестаёт брать деньги.</span></span></label>
+  </div>`}
+  <div class="kind-hint" id="fKindHint"></div>
+  <div class="field" id="fAmtBox"><label for="fAmt" id="fAmtLbl"></label><input id="fAmt" inputmode="decimal" value="${+amt0>0?nf.format(amt0):''}"></div>
+  <div class="field" id="fPctBox"><label for="fPct" id="fPctLbl"></label><input id="fPct" inputmode="decimal" value="${+pct0>0?nf2.format(pct0):''}"></div>
+  <div class="field" id="fTgtBox"><label for="fTgt" id="fTgtLbl"></label><input id="fTgt" inputmode="decimal" value="${+tgt0>0?nf.format(tgt0):''}"></div>
   <label class="check" id="fTaxBox"><input type="checkbox" id="fTax" ${f.taxOnly?'checked':''}> Только с доходов, облагаемых налогом</label>
-  <div class="field" id="fCapBox"><label for="fCap">Не больше в месяц, ₽ (необязательно)</label><input id="fCap" inputmode="decimal" value="${+f.cap?nf.format(f.cap):''}"><span class="note">Цель будет забирать из каждого месяца не больше этой суммы, остальное пойдёт дальше по очереди.</span></div>
-  <div class="grid2" id="fDebtBox"><div class="field"><label for="fRate">Ставка, % годовых</label><input id="fRate" inputmode="decimal" placeholder="Например, 29,9" value="${+f.rate?nf2.format(f.rate):f.rateSet?'0':''}"></div><div class="field"><label for="fMin">Платёж в месяц, ₽</label><input id="fMin" inputmode="decimal" placeholder="0" value="${+f.minPay?nf.format(f.minPay):''}"></div></div>
+  <div class="field" id="fDebtBox"><label for="fRate">Ставка, % годовых</label><input id="fRate" inputmode="decimal" placeholder="Например, 29,9" value="${+f.rate?nf2.format(f.rate):f.rateSet?'0':''}"></div>
   <div class="grid2"><div class="field" id="fDayBox"><label for="fDay">День платежа</label><input id="fDay" type="number" inputmode="numeric" min="1" max="31" placeholder="1–31" value="${+f.payDay?Math.round(+f.payDay):''}"></div>
   <div class="field" id="fDlBox"><label for="fDl">Срок (необязательно)</label><input type="date" id="fDl" value="${esc(f.deadline||'')}"></div></div>
   <div id="fAccBox">${accSelect('fAcc',fundAcc(f),'Где хранится','<option value="">Не указано</option>')}</div>
-  <div class="field" id="fCurBox"><label for="fCur" id="fCurLbl"></label><input id="fCur" inputmode="decimal" value="${isNew&&f.kind!=='debt'?'':(isNew?'':nf.format(cur))}"><span class="note" id="fCurNote"></span></div>
+  <div class="field" id="fCurBox"><label for="fCur" id="fCurLbl"></label><input id="fCur" inputmode="decimal" value="${isNew?'':nf.format(cur)}"><span class="note" id="fCurNote"></span></div>
   <div class="err" id="fErr"></div>
-  <button class="btn primary" id="fSave">${isNew?(f.kind==='debt'?'Добавить долг':'Добавить фонд'):'Сохранить'}</button>
-  ${!isNew&&f.kind==='goal'?`<section class="card close-goal" id="fCloseBox"><h3>${s.left<=0.5?'Цель накоплена':'Задача выполнена раньше?'}</h3>
-    <p class="note">${s.collected-s.balance>0.5?`Накоплено ${fmt(s.collected)}, потрачено ${fmt(s.collected-s.balance)}. `:''}${s.balance>0.5?`В фонде осталось ${fmt(s.balance)}. Закройте цель, и остаток уйдёт туда, куда скажете.`:s.balance<-0.5?`Фонд в минусе на ${fmt(-s.balance)}. Закройте цель, и минус покроется из выбранного фонда.`:'Закройте цель, чтобы она больше не забирала деньги.'}</p>
+  <button class="btn primary" id="fSave">${isNew?(st0.debt&&!st0.accum?'Добавить долг':'Добавить фонд'):'Сохранить'}</button>
+  ${!isNew&&f.kind==='goal'?`<section class="card close-goal" id="fCloseBox"><h3>${s.left<=0.5?(f.isDebt?'Накоплено на долг':'Цель накоплена'):(f.isDebt?'Долг оплачен раньше?':'Задача выполнена раньше?')}</h3>
+    <p class="note">${s.collected-s.balance>0.5?`Накоплено ${fmt(s.collected)}, потрачено ${fmt(s.collected-s.balance)}. `:''}${s.balance>0.5?`В фонде осталось ${fmt(s.balance)}. Закройте фонд, и остаток уйдёт туда, куда скажете.`:s.balance<-0.5?`Фонд в минусе на ${fmt(-s.balance)}. Закройте фонд, и минус покроется из выбранного фонда.`:'Закройте фонд, чтобы он больше не забирал деньги.'}</p>
     ${Math.abs(s.balance)>0.5?`<div class="field"><label for="fCloseTo">${s.balance>0?'Куда перенести остаток':'Из какого фонда покрыть минус'}</label><select id="fCloseTo">${activeFunds().filter(x=>x.id!==f.id&&x.kind!=='debt').sort((x,y)=>(y.kind==='rest')-(x.kind==='rest')).map(x=>`<option value="${esc(x.id)}">${esc(x.name)} · ${fmt(fstate(x,get).balance)}</option>`).join('')}<option value="_free">Без фонда</option></select></div>`:''}
-    <button class="btn primary" id="fClose">${ic('check')}Цель выполнена, закрыть</button></section>`:''}
-  ${isNew?'':`<button class="btn danger" id="fDel">${ic('trash')}Удалить фонд</button>`}`, ()=>{
-    const icoNote=()=>{$('#fIcoNote').textContent=icon?'':`· сейчас ${fundEmoji({name:$('#fName').value,kind:$('#fKind').value})}, подобрана по названию`};
+    <button class="btn primary" id="fClose">${ic('check')}${f.isDebt?'Долг оплачен, закрыть':'Цель выполнена, закрыть'}</button></section>`:''}
+  ${isNew||isReward?'':`<button class="btn danger" id="fDel">${ic('trash')}Удалить фонд</button>`}`, ()=>{
+    let {rule,debt,accum}=st0;
+    const curKind=()=>isReward?'reward':accum?'goal':debt?'debt':rule;
+    const icoNote=()=>{$('#fIcoNote').textContent=icon?'':`· сейчас ${fundEmoji({name:$('#fName').value,kind:curKind(),isDebt:debt})}, подобрана по названию`};
     $('#fIco').addEventListener('click',e=>{const b=e.target.closest('[data-e]');if(!b)return;icon=icon===b.dataset.e?'':b.dataset.e;$('#fIco').querySelectorAll('[data-e]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.e===icon)));icoNote()});
     $('#fName').addEventListener('input',icoNote);
-    const pick=e=>{const b=e.target.closest('[data-k]');if(!b)return;$('#fKind').value=b.dataset.k;sync()};
-    ['#fKindOps','#fKindTags'].forEach(s=>$(s).addEventListener('click',pick));$('.kind-reward').addEventListener('click',pick);
     const rewardHint=()=>{
-      const pct=parseAmt($('#fVal').value)||REWARD_DEFAULT; const F=monthFlow(monthPicture());
+      const pct=parseAmt($('#fPct').value); const F=monthFlow(monthPicture());
       const ex=F.known&&F.base>0?`<p>При вашем обычном доходе сверх плана остаётся около ${fmt(F.base)} в месяц. ${nf.format(pct)}% от них — примерно <b>${fmt(F.base*pct/100)}</b> в месяц на награды.</p>`
         :`<p>Например: пришло 300 000 ₽, налог и обязательные платежи забрали 220 000 ₽. Сверх плана осталось 80 000 ₽, и ${nf.format(pct)}% от них, ${fmt(80000*pct/100)}, уйдут в награды.</p>`;
-      return `<p><b>Как это работает.</b> Сначала из дохода берутся налог и обязательные платежи. Всё, что осталось сверху, это деньги сверх плана. Фонд наград забирает от них свой процент, остальное идёт на долги и накопления.</p>${ex}<p>Тратьте эти деньги на себя без чувства вины: так проще не сорваться и держать план по долгам. А за каждый закрытый долг положен отдельный бонус на покупку: ${BONUS_PCT}% от его суммы.</p>`;
+      return `<p><b>Фонд наград есть всегда.</b> Он создаётся сам и его нельзя удалить. Сначала из дохода берутся налог и обязательные платежи. Всё, что осталось сверху, это деньги сверх плана. Фонд наград забирает от них свой процент, остальное идёт на долги и накопления. Поставьте 0, если награды пока не нужны.</p>${ex}<p>Тратьте эти деньги на себя без чувства вины: так проще не сорваться и держать план по долгам. А за каждый закрытый долг положен отдельный бонус на покупку: ${BONUS_PCT}% от его суммы.</p>`;
     };
-    const sync=()=>{const k=$('#fKind').value;
-      document.querySelectorAll('#fKindOps [data-k],#fKindTags [data-k],.kind-reward').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.k===k)));
-      $('#fKindHint').innerHTML=k==='reward'?rewardHint():`<p>${KIND_HINT[k]||''}</p>`;
-      $('#fKindHint').classList.toggle('reward',k==='reward');
-      $('#fValBox').hidden=k==='rest'||k==='debt';
-      $('#fValLbl').textContent=k==='percent'?'Процент от дохода':k==='reward'?'Какой процент от денег сверх плана откладывать':k==='monthly'?'Сумма в месяц, ₽':'Цель, ₽';
-      $('#fCapBox').hidden=k!=='goal';
-      $('#fTaxBox').hidden=k!=='percent';
-      $('#fDebtBox').hidden=k!=='debt';
-      $('#fDayBox').hidden=!(k==='monthly'||k==='debt');
-      $('#fDlBox').hidden=!(k==='goal'||k==='debt');
-      $('#fAccBox').hidden=k==='debt';
-      const cb=$('#fCloseBox'); if(cb) cb.hidden=k!=='goal';
-      $('#fCurLbl').textContent=k==='debt'?'Сколько осталось погасить, ₽':'Сколько сейчас лежит в фонде, ₽';
-      $('#fCurNote').textContent=k==='debt'?'Укажите текущий остаток. Позже его можно поправить, если банк начислил проценты.':'Если деньги уже отложены, укажите сумму. Иначе оставьте пустым.';
+    const sync=()=>{
+      const plainDebt=debt&&!accum, plainPct=!debt&&!accum&&rule==='percent';
+      if(!isReward){
+        document.querySelectorAll('#fRule [data-k]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.k===rule)));
+        $('#fDebtOn').closest('.tgl').classList.toggle('on',debt); $('#fAccOn').closest('.tgl').classList.toggle('on',accum);
+      }
+      $('#fKindHint').innerHTML=isReward?rewardHint():ruleHint({rule,debt,accum});
+      $('#fKindHint').classList.toggle('reward',isReward);
+      $('#fAmtBox').hidden=isReward||rule!=='monthly';
+      $('#fAmtLbl').textContent=plainDebt?'Платёж по долгу в месяц, ₽':accum?'Сколько откладывать в месяц, ₽':'Сколько в месяц, ₽';
+      $('#fPctBox').hidden=!(isReward||rule==='percent');
+      $('#fPctLbl').textContent=isReward?'Какой процент от денег сверх плана откладывать':plainPct?'Процент от дохода':plainDebt?'Какой процент дохода отдавать на долг':'Какой процент дохода откладывать';
+      $('#fTgtBox').hidden=!accum; $('#fTgtLbl').textContent=debt?'Сумма долга, ₽':'Нужная сумма, ₽';
+      $('#fTaxBox').hidden=!plainPct;
+      $('#fDebtBox').hidden=!plainDebt;
+      $('#fDayBox').hidden=isReward||!((rule==='monthly'&&!accum)||plainDebt);
+      $('#fDlBox').hidden=isReward||!(accum||debt);
+      $('#fAccBox').hidden=plainDebt;
+      $('#fCurBox').hidden=isReward;
+      const cb=$('#fCloseBox'); if(cb) cb.hidden=!accum;
+      $('#fCurLbl').textContent=plainDebt?'Сколько осталось погасить, ₽':accum?(debt?'Сколько уже отложено на долг, ₽':'Сколько уже накоплено, ₽'):'Сколько сейчас лежит в фонде, ₽';
+      $('#fCurNote').textContent=plainDebt?'Укажите текущий остаток. Позже его можно поправить, если банк начислил проценты.':'Если деньги уже отложены, укажите сумму. Иначе оставьте пустым.';
       icoNote();
     };
-    $('#fVal').addEventListener('input',()=>{if($('#fKind').value==='reward')$('#fKindHint').innerHTML=rewardHint()});sync();
+    $('#fRule')?.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;rule=b.dataset.k;sync()});
+    $('#fDebtOn')?.addEventListener('change',e=>{debt=e.target.checked;sync()});
+    $('#fAccOn')?.addEventListener('change',e=>{accum=e.target.checked;sync()});
+    $('#fPct').addEventListener('input',()=>{if(isReward)$('#fKindHint').innerHTML=rewardHint()});
+    sync();
     $('#fSave').addEventListener('click',async()=>{
-      const name=$('#fName').value.trim(); const kind=$('#fKind').value;
+      const name=$('#fName').value.trim(); const kind=curKind();
       if(!name){$('#fErr').textContent='Дайте фонду название.';return}
-      const val=parseAmt($('#fVal').value); const curIn=parseAmt($('#fCur').value);
-      if((kind==='monthly'||kind==='goal')&&val<=0){$('#fErr').textContent='Укажите сумму больше нуля.';return}
-      if((kind==='percent'||kind==='reward')&&(val<=0||val>100)){$('#fErr').textContent='Процент должен быть от 1 до 100.';return}
-      if(kind==='debt'&&curIn<=0&&isNew){$('#fErr').textContent='Укажите сумму долга.';return}
+      const amt=Math.round(parseAmt($('#fAmt').value)), pct=parseAmt($('#fPct').value), tgt=Math.round(parseAmt($('#fTgt').value)), curIn=parseAmt($('#fCur').value);
+      const err=t=>{$('#fErr').textContent=t};
+      if((isReward?(pct<0||pct>100):(rule==='percent'&&(pct<=0||pct>100)))) return err(isReward?'Процент должен быть от 0 до 100.':'Процент должен быть от 1 до 100.');
+      if(!isReward&&rule==='monthly'&&amt<=0) return err(accum?'Укажите, сколько откладывать в месяц.':debt?'Укажите платёж по долгу в месяц.':'Укажите сумму больше нуля.');
+      if(accum&&tgt<=0) return err(debt?'Укажите сумму долга.':'Укажите, сколько нужно накопить.');
+      if(kind==='debt'&&curIn<=0&&isNew) return err('Укажите сумму долга.');
       const day=Math.round(parseAmt($('#fDay').value));
-      if($('#fDay').value.trim()&&(day<1||day>31)){$('#fErr').textContent='День платежа — число от 1 до 31.';return}
+      if($('#fDay').value.trim()&&(day<1||day>31)) return err('День платежа — число от 1 до 31.');
       const rate=parseAmt($('#fRate').value);
-      if(kind==='debt'&&(rate<0||rate>200)){$('#fErr').textContent='Ставка выглядит странно: укажите процент годовых, например 29,9.';return}
-      const data={accountId:kind!=='debt'&&$('#fAcc')?$('#fAcc').value:(f.accountId||''),name,kind,icon,taxOnly:kind==='percent'?$('#fTax').checked:false,deadline:(kind==='goal'||kind==='debt')?($('#fDl').value||''):'',cap:kind==='goal'?Math.round(parseAmt($('#fCap').value)):0,
-        payDay:(kind==='monthly'||kind==='debt')&&day>=1&&day<=31?day:0,rate:kind==='debt'?Math.round(rate*100)/100:0,rateSet:kind==='debt'&&$('#fRate').value.trim()!=='',minPay:kind==='debt'?Math.round(parseAmt($('#fMin').value)):0};
+      if(kind==='debt'&&(rate<0||rate>200)) return err('Ставка выглядит странно: укажите процент годовых, например 29,9.');
+      const data={accountId:kind!=='debt'&&$('#fAcc')?$('#fAcc').value:(f.accountId||''),name,icon,
+        ...fundFields({rule,debt,accum,reward:isReward},{amt,pct,tgt,day,rate,rateSet:$('#fRate').value.trim()!=='',tax:$('#fTax').checked,dl:$('#fDl').value})};
       const moved=isNew?0:(s.moved||0); const paid=isNew?0:(s.paid||0);
       if(kind==='debt'){data.value=Math.round(curIn+paid);data.start=0}
-      else {data.value=kind==='rest'?0:val;data.start=Math.round(curIn-moved)}
+      else data.start=Math.round(curIn-moved);
       await write(async()=>{
         if(isNew){data.order=(activeFunds().reduce((m,x)=>Math.max(m,+x.order||0),0))+1;data.createdAt=Date.now();await DB.add('funds',data)}
         else await DB.update('funds',f.id,data);
@@ -787,16 +855,18 @@ function openFund(f,kindPreset){
     const del=$('#fDel'); if(del) del.addEventListener('click',()=>deleteFund(f));
     const cl=$('#fClose'); if(cl) cl.addEventListener('click',async()=>{
       const b=Math.round(s.balance); const to=$('#fCloseTo')?$('#fCloseTo').value:'';
+      const what=f.isDebt?'Долг':'Цель';
       await write(async()=>{
         const date=today();
-        if(b>0&&to) await DB.add('tx',{type:'transfer',from:f.id,alloc:{[to]:b},amount:b,date,month:date.slice(0,7),note:`Цель «${f.name}» выполнена, остаток`,by:S.uid||null,createdAt:Date.now()});
-        if(b<0&&to) await DB.add('tx',{type:'transfer',from:to,alloc:{[f.id]:-b},amount:-b,date,month:date.slice(0,7),note:`Цель «${f.name}» выполнена, покрыт перерасход`,by:S.uid||null,createdAt:Date.now()});
+        if(b>0&&to) await DB.add('tx',{type:'transfer',from:f.id,alloc:{[to]:b},amount:b,date,month:date.slice(0,7),note:`${what} «${f.name}» закрыт${f.isDebt?'':'а'}, остаток`,by:S.uid||null,createdAt:Date.now()});
+        if(b<0&&to) await DB.add('tx',{type:'transfer',from:to,alloc:{[f.id]:-b},amount:-b,date,month:date.slice(0,7),note:`${what} «${f.name}» закрыт${f.isDebt?'':'а'}, покрыт перерасход`,by:S.uid||null,createdAt:Date.now()});
         await DB.update('funds',f.id,{archived:true,done:true});
-      },b>0&&to?`Цель закрыта, ${fmt(b)} ушли в «${fundName(to)}»`:'Цель закрыта');
+      },b>0&&to?`${what} закрыт${f.isDebt?'':'а'}, ${fmt(b)} ушли в «${fundName(to)}»`:`${what} закрыт${f.isDebt?'':'а'}`);
     });
   });
 }
 async function deleteFund(f){
+  if(f.kind==='reward'){toast('Фонд наград удалить нельзя. Если он не нужен, поставьте 0%.');return}
   const s=fstate(f,stats().get); let trId=null;
   try{
     if(f.kind!=='debt'&&s.balance>0.5){const a=Math.round(s.balance);trId=await DB.add('tx',{type:'transfer',from:f.id,alloc:{_free:a},amount:a,date:today(),month:curMonth(),note:`Фонд «${f.name}» удалён`,by:S.uid||null,createdAt:Date.now()})}
@@ -811,7 +881,6 @@ async function insertFund(data,idx){
   data.order=idx+1; data.createdAt=data.createdAt||Date.now();
   return DB.add('funds',data);
 }
-function rewardIndex(){const l=activeFunds();let i=-1;l.forEach((f,k)=>{if(f.kind==='monthly'||f.kind==='percent')i=k});return i+1}
 function wishGoalIndex(){const l=activeFunds();let i=l.findIndex(f=>f.kind==='debt');if(i<0)i=l.findIndex(f=>f.kind==='rest');return i<0?l.length:i}
 
 function openWish(w){
@@ -839,12 +908,6 @@ function openWish(w){
     $('#wVerdict').addEventListener('click',async e=>{
       const b=e.target.closest('[data-wopt]'); if(!b||!v)return; const o=v.opts[+b.dataset.wopt]; if(!o)return;
       const p=price(); if(p<=0){$('#wErr').textContent='Введите цену больше нуля.';return}
-      if(o.action==='add-reward'){
-        b.disabled=true;
-        try{await insertFund({name:'Награды',kind:'reward',value:REWARD_DEFAULT,start:0,taxOnly:false,deadline:''},rewardIndex());toast('Фонд наград включён. Он пополнится со следующего дохода')}
-        catch(err){$('#wErr').textContent='Не получилось создать фонд.'}
-        return;
-      }
       if(o.goal){
         if(!name()){$('#wErr').textContent='Напишите, что хотите купить.';return}
         await write(async()=>{
@@ -1186,6 +1249,7 @@ document.addEventListener('click',async e=>{
   else if(act==='mv-done'){const m=(S.moves||[])[+a.dataset.i];if(m&&S.canWrite){a.disabled=true;try{await recordMove(m);toast(m.debt?'Платёж отмечен':'Перевод отмечен')}catch(e){toast('Не получилось сохранить.');a.disabled=false}}}
   else if(act==='mv-all'){if(S.canWrite&&S.moves){a.disabled=true;try{for(const m of S.moves)await recordMove(m);closeSheet();toast('Всё отмечено, остатки на картах обновлены')}catch(e){toast('Не получилось сохранить.');a.disabled=false}}}
   else if(act==='go-funds'){S.tab='funds';S.enterNext=true;render();window.scrollTo(0,0)}
+  else if(act==='pay-lump'){const f=fundById(a.dataset.id);if(f&&S.canWrite)openExpense(null,{fundId:f.id,amount:Math.round(fstate(f,stats().get).balance),note:'Платёж по долгу'})}
   else if(act==='pay'){const f=fundById(a.dataset.id);if(f&&S.canWrite)openExpense(null,{fundId:f.id,amount:+a.dataset.amt||0})}
   else if(act==='ics')exportICS();
   else if(act==='export-csv')exportCSV();
@@ -1420,7 +1484,7 @@ function wzFunds(){
   if(z.tax.on&&parseAmt(z.tax.pct)>0) L.push({id:'d-tax',name:'Налоги',kind:'percent',value:parseAmt(z.tax.pct),taxOnly:true,acc:wzDefAcc('percent')});
   of('percent').forEach(({r,i})=>L.push({id:'d-f'+i,name:r.name.trim(),kind:'percent',value:Math.min(100,parseAmt(r.amount)),acc:wzAccOf(r)}));
   of('monthly').forEach(({r,i})=>L.push({id:'d-f'+i,name:r.name.trim(),kind:'monthly',value:nA(r.amount),acc:wzAccOf(r)}));
-  if(z.reward.on&&parseAmt(z.reward.pct)>0) L.push({id:'d-rw',name:'Награды',kind:'reward',value:parseAmt(z.reward.pct),acc:wzDefAcc('reward')});
+  if(parseAmt(z.reward.pct)>0) L.push({id:'d-rw',name:'Награды',kind:'reward',value:parseAmt(z.reward.pct),acc:wzDefAcc('reward')});
   of('goal').forEach(({r,i})=>L.push({id:'d-f'+i,name:r.name.trim(),kind:'goal',value:nA(r.amount),acc:wzAccOf(r)}));
   const debts=of('debt').map(({r,i})=>{const rate=Math.max(0,parseAmt(r.rate)),min=Math.min(nA(r.min),nA(r.amount));return {f:{id:'d-f'+i,name:r.name.trim(),kind:'debt',value:nA(r.amount),rate,rateSet:String(r.rate||'').trim()!=='',minPay:min},bal:nA(r.amount),rate,min}});
   orderDebts(debts,z.strat).forEach(d=>L.push(d.f));
@@ -1533,9 +1597,9 @@ function wzBody(id){
     <div id="wzSum"></div>
     ${sum(wzAccs().map(a=>nA(a.bal)))>0?`<section class="card"><label class="check"><input type="checkbox" data-wz="found" ${z.found?'checked':''}> <b>Разложить ${fmt(sum(wzAccs().map(a=>nA(a.bal))))} с карт по фондам</b></label><p class="note">Деньги, которые уже есть, сразу разойдутся по фондам: сначала обязательное на этот месяц, потом остальное.</p></section>`:''}
     ${nd>=2?`<section class="block"><h2>Какой долг гасить первым</h2><div class="list strat" id="wzStrat"></div><p class="note" id="wzStratNote"></p></section>`:''}
-    <section class="card rw"><label class="check"><input type="checkbox" data-wz="reward.on" ${z.reward.on?'checked':''}> <b>Откладывать на награды</b></label>
-      <p class="note">Без радостей сложно долго держать режим экономии. Небольшая доля денег сверх обязательных платежей уходит на покупки для себя без чувства вины.</p>
-      <div class="field" id="wzRwBox" ${z.reward.on?'':'hidden'}><label for="wzRw">Процент от денег сверх обязательных платежей</label><input id="wzRw" data-wz="reward.pct" inputmode="decimal" value="${esc(z.reward.pct)}"></div>
+    <section class="card rw"><h3>Награды</h3>
+      <p class="note">Фонд наград есть всегда и создаётся сам. Без радостей сложно долго держать режим экономии, поэтому небольшая доля денег сверх обязательных платежей уходит на покупки для себя без чувства вины.</p>
+      <div class="field" id="wzRwBox"><label for="wzRw">Процент от денег сверх обязательных платежей</label><input id="wzRw" data-wz="reward.pct" inputmode="decimal" value="${esc(z.reward.pct)}"></div>
       <div class="note" id="wzRwLive"></div></section>
     <section class="block"><h2>Как растечётся ${M0()}</h2><div id="wzSplit"></div><p class="note">Порядок и суммы потом меняются во вкладке «Фонды».</p></section>`;}
   if(id==='invite'){const code=S.household&&S.household.inviteCode||'';
@@ -1609,7 +1673,7 @@ function wzLive(){
     const rw=$('#wzRwLive'); if(rw) rw.innerHTML=z.reward.on&&M.perReward>0?`Это около <b>${fmt(M.perReward)}</b> в месяц.`:'';
   }
   if(id==='wishes'){
-    h=M.perReward>0?`<div class="live">В фонд наград пойдёт около <b>${fmt(M.perReward)}</b> в месяц.</div>`:`<div class="live">Сроки по желаниям считаются по фонду наград. Включите его из карточки любого желания на главной.</div>`;
+    h=M.perReward>0?`<div class="live">В фонд наград пойдёт около <b>${fmt(M.perReward)}</b> в месяц.</div>`:`<div class="live">Сроки по желаниям считаются по фонду наград, а сейчас у него 0%. Задайте процент в фонде «Награды».</div>`;
     let acc=0; z.wishes.forEach((r,i)=>{const p=nA(r.price);if(!(p>0)||!M.perReward){setEta('wishes-'+i,'');return}acc+=p;const k=Math.ceil(acc/M.perReward);setEta('wishes-'+i,`Можно купить ${whenTxt(k)} из фонда наград`)});
   }
   if(id==='queue'||id==='finish'){
@@ -1699,7 +1763,7 @@ async function wzAction(act,a){
       z.funds=z.funds.filter(r=>r.name.trim()||parseAmt(r.amount)>0);
       if(!z.funds.some(r=>r.kind==='debt')||z.funds.filter(r=>r.kind==='debt').length<2) z.strat=z.funds.some(r=>r.kind==='debt'&&String(r.rate||'').trim())?'avalanche':'custom';
     }
-    if(id==='plan'&&z.reward.on&&!(parseAmt(z.reward.pct)>0&&parseAmt(z.reward.pct)<=100)) return err('Процент на награды должен быть от 1 до 100. Или снимите галочку.');
+    if(id==='plan'&&!(parseAmt(z.reward.pct)>=0&&parseAmt(z.reward.pct)<=100)) return err('Процент на награды должен быть от 0 до 100.');
     if(fresh&&id==='plan'){
       z.busy=true;drawWizard(false);
       try{
@@ -1713,7 +1777,7 @@ async function wzAction(act,a){
         for(const [i,f] of wzFunds().entries()){
           const data={name:f.name,kind:f.kind,value:f.value,icon:'',start:0,taxOnly:!!f.taxOnly,deadline:'',cap:0,payDay:0,accountId:f.kind!=='debt'&&f.acc!==''&&f.acc!=null?(accIds[f.acc]||''):'',
             rate:f.kind==='debt'?Math.round((+f.rate||0)*100)/100:0,rateSet:f.kind==='debt'&&!!f.rateSet,minPay:f.kind==='debt'?(+f.minPay||0):0,order:i+1,createdAt:at+i};
-          const id=await DB.add('funds',data); created.push({id,...data});
+          const id=f.kind==='reward'?(await DB.set('funds','reward',data),'reward'):await DB.add('funds',data); created.push({id,...data});
         }
         const have=sum(Object.values(accMap).map(a=>a.bal));
         if(z.found&&have>0){const d=distribute(have,false,{funds:created,get:()=>G0(),noPct:true});const alloc={};d.rows.forEach(r=>{if(r.give>0)alloc[r.f.id]=r.give});if(d.free>0)alloc._free=d.free;
@@ -1907,16 +1971,26 @@ function openSettings(){
 }
 
 /* ---------- запуск ---------- */
-let unsubs=[];
+let unsubs=[], rwBusy=false;
 function stopWatching(){unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[]}
+// Фонд наград есть у каждой семьи: создаётся сам (с фиксированным id, чтобы двое не создали два), удалить нельзя
+function ensureReward(){
+  if(rwBusy||!S.canWrite||!S.hid) return;
+  const all=S.funds.filter(f=>f.kind==='reward'); if(all.some(f=>!f.archived)) return;
+  rwBusy=true;
+  if(all.length){DB.update('funds',all[0].id,{archived:false});return}
+  let last=null; for(const f of activeFunds()) if(f.kind==='monthly'||f.kind==='percent') last=f;
+  DB.set('funds','reward',{name:'Награды',kind:'reward',value:REWARD_DEFAULT,start:0,taxOnly:false,deadline:'',icon:'',accountId:'',order:last?(+last.order||0)+0.5:0.5,createdAt:Date.now()});
+}
 function startHousehold(hid){
-  stopWatching(); S.hid=hid; DB.useHousehold(hid); S.status='loading'; render();
+  rwBusy=false; stopWatching(); S.hid=hid; DB.useHousehold(hid); S.status='loading'; render();
   let gotF=false,gotT=false,gotH=false;
   const done=()=>{
     if(gotF&&gotT&&gotH&&S.status==='loading'){
-      if(!(S.household&&S.household.setupDone)&&!S.funds.length){S.wz=newWizard('new');S.status='setup'}else S.status='ready';
+      if(!(S.household&&S.household.setupDone)&&!S.funds.length){S.wz=newWizard('new');S.status='setup'}else{S.status='ready';ensureReward()}
       S.enterNext=true; render(); return;
     }
+    if(S.status==='ready')ensureReward();
     if(S.status==='ready'||S.status==='setup')renderSoon();
   };
   const onErr=e=>{if(e&&e.code==='permission-denied'){stopWatching();LS.del('ff-hid:'+S.uid);S.status='onboard';render();toast('Нет доступа к этому бюджету. Присоединитесь заново по коду.')}};
