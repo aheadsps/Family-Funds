@@ -376,6 +376,18 @@ function moveTabInd(){
   if(first)requestAnimationFrame(()=>requestAnimationFrame(()=>ind.classList.remove('noanim')));
 }
 addEventListener('resize',()=>moveTabInd());
+// iPhone после поворота иногда оставляет сдвинутую вёрстку: когда телефон снова вертикально, пересчитываем её заново
+let rotT;
+function relayout(){
+  clearTimeout(rotT);
+  rotT=setTimeout(()=>{
+    if(matchMedia('(orientation:landscape)').matches&&innerHeight<=500) return;
+    const d=document.documentElement, y=scrollY; d.style.display='none'; void d.offsetHeight; d.style.display=''; scrollTo(0,y);
+    moveTabInd(); fitSheet();
+  },300);
+}
+addEventListener('orientationchange',relayout);
+matchMedia('(orientation:portrait)').addEventListener('change',relayout);
 function countUp(root){
   if(calm())return;
   root.querySelectorAll('[data-count]').forEach(el=>{const to=+el.dataset.count||0,t0=performance.now(),d=550;

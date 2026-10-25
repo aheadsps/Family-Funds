@@ -442,6 +442,14 @@ html.app-ready{background:var(--bg)}
 .kind-hint p{margin:0 0 6px}.kind-hint p:last-child{margin:0}
 .kind-hint.reward{background:var(--reward-soft);color:var(--ink)}
 .kind-hint.reward b{color:var(--reward-ink)}
+/* только вертикаль: iPhone не умеет блокировать поворот, поэтому в горизонтальном положении закрываем экран подсказкой */
+#rotate{display:none}
+@media (orientation:landscape) and (max-height:500px) and (pointer:coarse){
+  html{overflow:hidden}
+  #rotate{display:flex;position:fixed;inset:0;z-index:1000;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:24px;text-align:center;background:var(--bg);color:var(--ink)}
+  #rotate .ri{font-size:40px;line-height:1}
+  #rotate span{color:var(--muted);font-size:14px}
+}
 .tgls{display:grid;gap:8px}
 .tgl{display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--line);background:var(--surface);border-radius:var(--r-sm);cursor:pointer;transition:background-color .2s,border-color .2s}
 .tgl.on{border-color:var(--accent);background:var(--accent-soft)}
@@ -544,6 +552,7 @@ html.app-ready{background:var(--bg)}
 <script>['gesturestart','gesturechange','gestureend'].forEach(function(e){document.addEventListener(e,function(ev){ev.preventDefault()})});var _t=0;document.addEventListener('touchend',function(ev){if(ev.target.closest&&ev.target.closest('input,select,textarea'))return;var n=Date.now();if(n-_t<350)ev.preventDefault();_t=n},{passive:false});</script>
 </head>
 <body>
+<div id="rotate" role="alert"><div class="ri" aria-hidden="true">📱</div><b>Переверните телефон</b><span>Поток работает в вертикальном положении</span></div>
 <div id="splash" aria-hidden="true">
   <svg class="sp-mark" viewBox="0 0 100 100" focusable="false">
     <defs>
