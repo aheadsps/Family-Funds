@@ -379,14 +379,18 @@ function moveTabInd(){
   if(first)requestAnimationFrame(()=>requestAnimationFrame(()=>ind.classList.remove('noanim')));
 }
 addEventListener('resize',()=>moveTabInd());
-// iPhone после поворота иногда оставляет сдвинутую вёрстку: после поворота пересчитываем её заново
-let rotT;
+// iPhone во время поворота считает вёрстку в промежуточных размерах и потом иногда не пересчитывает её (например, сетку эмодзи).
+// Когда поворот закончился, пересчитываем вёрстку заново, дважды: сразу после и когда анимация точно завершилась.
+let rotT=[];
 function relayout(){
-  clearTimeout(rotT);
-  rotT=setTimeout(()=>{
-    const d=document.documentElement, y=scrollY; d.style.display='none'; void d.offsetHeight; d.style.display=''; scrollTo(0,y);
+  rotT.forEach(clearTimeout);
+  const run=()=>{
+    const d=document.documentElement, y=scrollY, typing=/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName);
+    if(typing) void d.offsetHeight;   // с открытой клавиатурой экран не скрываем, иначе она закроется
+    else{d.style.display='none'; void d.offsetHeight; d.style.display=''; scrollTo(0,y)}
     moveTabInd(); fitSheet();
-  },300);
+  };
+  rotT=[setTimeout(run,250),setTimeout(run,900)];
 }
 addEventListener('orientationchange',relayout);
 matchMedia('(orientation:portrait)').addEventListener('change',relayout);
