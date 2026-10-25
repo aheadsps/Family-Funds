@@ -162,7 +162,6 @@ function distribute(amount,taxable,o={}){
   const restF=funds.find(f=>f.kind==='rest'); if(restF&&rem>0){give[restF.id]+=rem;rem=0}
   return {rows:funds.map(f=>({f,give:give[f.id]})),free:rem,surplus,mandatory,short:Math.max(0,Q-mandatory)};
 }
-function plan(amount,taxable,skip){return distribute(amount,taxable,{skip})}
 // Короткая сводка раскладки по группам
 const GROUPS=[['tax','Налог и проценты',k=>k==='percent'],['life','Платежи и жизнь',k=>k==='monthly'],['debt','Долги',k=>k==='debt'],['goal','Цели',k=>k==='goal'],['reward','Награды',k=>k==='reward'],['rest','Накопления',k=>k==='rest']];
 function groupSplit(rows,free){
@@ -1364,7 +1363,6 @@ document.addEventListener('change',e=>{
 /* ---------- пошаговая настройка ----------
    Первый вход: 5 шагов (доход → где лежат деньги → фонды → план → семья), потом подсказки на главной.
    «Пройти настройку заново» из меню: короткий режим, фонды не меняются. */
-const KIND_SHORT={percent:'процент',monthly:'каждый месяц',reward:'награды',debt:'долг',goal:'цель',rest:'остаток'};
 const WZ_KINDS={
   monthly:{t:'Платёж в месяц',e:'🔁',s:'Одна и та же сумма каждый месяц',
     why:'Для расходов, которые повторяются каждый месяц: жильё, еда, бензин, связь, кружки. Каждый доход делится между такими фондами пропорционально, пока все не наберут свою сумму на месяц. Не потратили — остаток перейдёт на следующий месяц.',

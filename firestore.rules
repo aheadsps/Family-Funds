@@ -19,7 +19,9 @@ service cloud.firestore {
     }
 
     match /households/{hid} {
-      allow read, update: if isMember(hid);
+      allow read: if isMember(hid);
+      // владельца семьи нельзя сменить: остальные поля участники меняют свободно
+      allow update: if isMember(hid) && request.resource.data.owner == resource.data.owner;
       allow create: if signedIn() && request.resource.data.owner == request.auth.uid;
 
       match /members/{uid} {
@@ -31,11 +33,15 @@ service cloud.firestore {
               && get(/databases/$(database)/documents/invites/$(request.resource.data.code)).data.hid == hid)
         );
         allow update: if signedIn() && request.auth.uid == uid && isMember(hid);
-        allow delete: if isMember(hid);
+        // выйти может сам участник, убрать другого может только владелец семьи
+        allow delete: if isMember(hid) && (request.auth.uid == uid
+          || get(/databases/$(database)/documents/households/$(hid)).data.owner == request.auth.uid);
       }
 
       match /{col}/{docId} {
-        allow read, write: if col in ['funds', 'tx', 'wishes'] && isMember(hid);
+        allow read, delete: if col in ['funds', 'tx', 'wishes'] && isMember(hid);
+        // запись — обычная карточка, а не мусор: не больше 60 полей
+        allow create, update: if col in ['funds', 'tx', 'wishes'] && isMember(hid) && request.resource.data.size() <= 60;
       }
     }
   }

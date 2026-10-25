@@ -1,8 +1,8 @@
 // Файлы сайта отдаются из кэша сразу (без белого экрана на запуске) и обновляются в фоне:
 // новая версия откроется при следующем запуске. Без сети работает из кэша.
 // Библиотеки Firebase кэшируются навсегда (их адрес содержит версию).
-const CACHE = 'potok-v12';
-const SHELL = ['./', './index.html', './app.js', './icons.js', './fb.js', './firebase-config.js', './seed.js', './unbounded.woff',
+const CACHE = 'potok-v13';
+const SHELL = ['./', './index.html', './app.js', './icons.js', './fb.js', './firebase-config.js', './seed.js', './unbounded.woff', './golos-cyrillic.woff2', './golos-latin.woff2',
   './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 const FB = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js']
   .map(f => 'https://www.gstatic.com/firebasejs/10.12.2/' + f);
