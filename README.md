@@ -42,6 +42,7 @@
 ## Файлы
 - `index.html`, `app.js` — интерфейс и расчёты
 - `unbounded.woff` — шрифт Unbounded для логотипа и заголовков (лицензия OFL, файл unbounded-OFL.txt), только кириллица и латиница.
+- `golos-cyrillic.woff2`, `golos-latin.woff2` — шрифт Golos Text для основного текста (лицензия SIL OFL, источник Google Fonts). Лежит в репозитории, поэтому работает без интернета и без обращений к Google.
 - `splash/` — статичные заставки для iPhone, `icons.js` — иконки интерфейса (Lucide, встроены для работы без сети)
 - `fb.js` — работа с Firebase
 - `firebase-config.js` — ключи проекта

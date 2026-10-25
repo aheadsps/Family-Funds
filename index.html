@@ -24,10 +24,7 @@
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="preload" href="unbounded.woff" as="font" type="font/woff" crossorigin>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap"></noscript>
+<link rel="preload" href="golos-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
 <script>
 /* Тема до первой отрисовки, чтобы не мигало: auto | light | dark */
 (function(){try{var t=localStorage.getItem('ff-theme');if(t==='light'||t==='dark'){document.documentElement.dataset.theme=t;var c=t==='dark'?'#0A1520':'#F1F6FA';document.querySelectorAll('meta[name=theme-color]').forEach(function(m){m.content=c})}}catch(e){}})();
@@ -37,6 +34,8 @@
    Раньше: «Тёплый поток»: тёплая основа, цвет по типу фонда, русло очереди, праздник за прогресс.
    Layout: одна колонка, шапка, четыре вкладки внизу, шторки для ввода. */
 @font-face{font-family:"Unbounded";src:url(unbounded.woff) format("woff");font-weight:500 700;font-style:normal;font-display:swap}
+@font-face{font-family:"Golos Text";src:url(golos-cyrillic.woff2) format("woff2");font-weight:400 700;font-style:normal;font-display:swap;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:"Golos Text";src:url(golos-latin.woff2) format("woff2");font-weight:400 700;font-style:normal;font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 :root{
   --bg:#F1F6FA; --surface:#FFFFFF; --surface-2:#E2ECF4; --surface-3:#D3E0EA; --sheet:#FFFFFF; --field:#F1F6FA;
   --ink:#0F2233; --muted:#566878; --line:#D3E0EA; --glow:rgba(77,148,230,.13);
