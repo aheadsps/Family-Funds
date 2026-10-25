@@ -107,8 +107,10 @@ function monthsLeft(deadline){
 function dlPlan(f,s){
   if(!f.deadline) return null;
   const left=f.kind==='debt'?s.remaining:s.left; const ml=monthsLeft(f.deadline);
-  const base=left+s.allocM; const perMonth=ml>0?base/ml:base;
-  return {left,ml,perMonth,still:Math.max(0,Math.min(left,perMonth-s.allocM))};
+  // долг со ставкой: платёж такой, чтобы с процентами закрыть его ровно к сроку (аннуитет)
+  const base=left+s.allocM; const r=f.kind==='debt'?Math.max(0,+f.rate||0)/1200:0;
+  const perMonth=ml>0?(r>0?base*r/(1-Math.pow(1+r,-ml)):base/ml):base;
+  return {left,ml,perMonth,still:Math.max(0,Math.min(left,perMonth-s.allocM)),interest:r>0};
 }
 // План по сроку, пока срок не прошёл. Просроченный срок обязательное не раздувает: фонд ведёт себя как без срока
 function livePlan(f,s){const d=dlPlan(f,s);return d&&d.ml>0?d:null}
@@ -179,7 +181,7 @@ function monthPicture(){
   const pct=sum(funds.filter(f=>f.kind==='percent').map(f=>+f.value||0));
   const dl=[];
   for(const f of funds.filter(f=>(f.kind==='debt'||f.kind==='goal')&&f.deadline)){
-    const s=fstate(f,get); const d=dlPlan(f,s); dl.push({f,left:d.left,ml:d.ml,perMonth:d.perMonth,stillThisMonth:d.ml>0?d.still:0});
+    const s=fstate(f,get); const d=dlPlan(f,s); dl.push({f,left:d.left,ml:d.ml,perMonth:d.perMonth,interest:d.interest,stillThisMonth:d.ml>0?d.still:0});
   }
   const needDebt=sum(funds.filter(f=>f.kind==='debt').map(f=>monthReq(f,get)));
   const stillNet=sum(funds.map(f=>monthReq(f,get)));
@@ -200,7 +202,7 @@ function tips(P){
   for(const d of P.dl){
     if(d.left<=0){out.push({tone:'good',title:`«${d.f.name}»: ${d.f.kind==='debt'?'долг закрыт':'цель достигнута'}`,text:'Фонд больше ничего не забирает из доходов.'});continue}
     if(d.ml<=0) out.push({tone:'bad',title:`«${d.f.name}»: срок прошёл, осталось ${fmt(d.left)}`,text:'Поставьте новый срок в настройках фонда, чтобы подсказка пересчитала план.'});
-    else out.push({tone:d.stillThisMonth>0?'info':'good',title:`«${d.f.name}»: осталось ${fmt(d.left)}`,text:`До ${dateLabel(d.f.deadline)} нужно по ${fmt(d.perMonth)} в месяц.`+(d.stillThisMonth>0?` В ${PREP[mi]} ещё ${fmt(d.stillThisMonth)}.`:` План на ${NOM[mi].toLowerCase()} выполнен.`)});
+    else out.push({tone:d.stillThisMonth>0?'info':'good',title:`«${d.f.name}»: осталось ${fmt(d.left)}`,text:`До ${dateLabel(d.f.deadline)} нужно по ${fmt(d.perMonth)} в месяц${d.interest?' с учётом процентов':''}.`+(d.stillThisMonth>0?` В ${PREP[mi]} ещё ${fmt(d.stillThisMonth)}.`:` План на ${NOM[mi].toLowerCase()} выполнен.`)});
   }
   if(P.stillNet<=0.5){const next=funds.find(f=>(f.kind==='debt'||f.kind==='goal')&&fstate(f,get).need>0.5)||funds.find(f=>f.kind==='rest');
     const rw=funds.some(f=>f.kind==='reward'&&(+f.value||0)>0);
@@ -421,7 +423,8 @@ function fundRowNow(f,get,mi){
 function paymentsBlock(){
   const L=upcoming(7); if(!L.length) return '';
   return `<section class="block"><div class="sec-head"><h2>Ближайшие платежи</h2><button class="btn sm ghost" data-act="ics">${ic('calendar-plus')}В календарь</button></div><div class="list">${L.map(p=>{
-    const st=p.paidNow?'<span class="chip v-good">оплачено</span>':p.enough===null?'':p.enough?'<span class="chip v-good">в фонде хватает</span>':`<span class="chip v-warn">в фонде не хватает ${fmt(p.short)}</span>`;
+    const debt=p.f.kind==='debt';
+    const st=p.paidNow?'<span class="chip v-good">оплачено</span>':p.enough===null?'':p.enough?`<span class="chip v-good">${debt?'деньги отложены, внесите в банк':'в фонде хватает'}</span>`:`<span class="chip v-warn">${debt?'отложено не всё, не хватает':'в фонде не хватает'} ${fmt(p.short)}</span>`;
     return `<div class="pay ${p.overdue?'overdue':''}">${fundIcon(p.f,'sm')}<div class="pb"><div class="pn">${esc(p.f.name)}</div><div class="note"><span class="when">${esc(p.when)}</span></div><div>${st}</div></div><div class="pr"><span class="pa">${p.amount>0?fmt(p.amount):''}</span>${S.canWrite&&!p.paidNow?`<button class="btn sm ghost" data-act="pay" data-id="${esc(p.f.id)}" data-amt="${Math.round(p.amount||0)}">Оплатил</button>`:''}</div></div>`}).join('')}</div></section>`;
 }
 
@@ -929,19 +932,29 @@ function durationWord(k){const y=Math.floor(k/12),m=k%12;const ys=y?`${y} ${plur
 const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 
 /* ---------- регулярные платежи ---------- */
+// Внесено в банк за текущий месяц: отметки «Внёс» (перевод на долг) и записанные платежи по долгу
+function debtPaidM(id){
+  const m=curMonth(); let v=0;
+  for(const t of S.tx){ if(t.month!==m) continue;
+    if(t.type==='move'&&t.debt===id) v+=+t.amount||0;
+    else if(t.type==='expense'&&t.fundId===id) v+=+t.amount||0; }
+  return v;
+}
 function upcoming(days=7){
   const {get}=stats(); const now=new Date(); const t0=new Date(now.getFullYear(),now.getMonth(),now.getDate()); const out=[];
   for(const f of activeFunds()){
     const day=Math.round(+f.payDay||0); if(!(day>=1&&day<=31)||!(f.kind==='monthly'||f.kind==='debt')) continue;
     const s=fstate(f,get), v=+f.value||0, mp=+f.minPay||0;
     if(f.kind==='debt'&&s.remaining<=0.5) continue;
-    const paidNow=f.kind==='monthly'?(v>0&&s.spentM>=v-0.5):(mp>0?s.allocM>=mp-0.5:s.allocM>0.5);
+    const paidM=f.kind==='debt'?debtPaidM(f.id):0;
+    const paidNow=f.kind==='monthly'?(v>0&&s.spentM>=v-0.5):(mp>0?paidM>=mp-0.5:paidM>0.5);
     const thisDue=dueIn(t0.getFullYear(),t0.getMonth(),day);
     let due,amount,enough=null,short=0,overdue=false;
     if(!paidNow){
       due=thisDue; overdue=thisDue<t0;
-      amount=f.kind==='monthly'?Math.max(0,v-s.spentM):Math.min(s.remaining,Math.max(0,mp-s.allocM));
+      amount=f.kind==='monthly'?Math.max(0,v-s.spentM):Math.min(s.remaining,Math.max(0,mp-paidM));
       if(f.kind==='monthly'){enough=s.balance>=amount-0.5;short=Math.max(0,amount-s.balance)}
+      else{const aside=Math.max(0,s.allocM-paidM);enough=aside>=amount-0.5;short=Math.max(0,amount-aside)}
     } else {
       if(thisDue>=t0) continue; // уже оплачен в этом месяце до срока
       due=dueIn(t0.getFullYear(),t0.getMonth()+1,day);

@@ -10,8 +10,9 @@ const block = (from, to) => L.slice(idx(from), idx(to)).join('\n');
 const core = L.slice(3, idx(/^\/\* -+ render -+ \*\//)).join('\n');
 const debts = block(/^function orderDebts/, /^function debtSummary/);
 const eta = block(/^function etaSim/, /^function wzMetrics/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\nreturn {S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim};')(() => '');
-const { S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim } = A;
+const pay = block(/^function isoD/, /^function icsEsc/);
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\nreturn {S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming};')(() => '');
+const { S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -78,3 +79,36 @@ test('прогноз мастера по долгам учитывает про�
   const sim = simulate('custom', 30000, ds.map(f => ({ f, bal: f.value, rate: f.rate, min: f.minPay })));
   assert.equal(Math.max(e.d1, e.d2), sim.months);
 });
+
+const inMonths = k => { const d = new Date(); d.setMonth(d.getMonth() + k - 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+
+test('план по сроку для долга со ставкой даёт аннуитет и закрывает долг ровно к сроку', () => {
+  const debt = { id: 'd', name: 'Кредит', kind: 'debt', value: 120000, rate: 24, deadline: inMonths(12) };
+  setup([debt]);
+  const d = dlPlan(S.funds[0], fstate(S.funds[0], stats().get));
+  assert.equal(d.ml, 12);
+  const r = 0.02, expect = 120000 * r / (1 - Math.pow(1 + r, -12));
+  assert.ok(Math.abs(d.perMonth - expect) < 1, `${d.perMonth} против ${expect}`);
+  const sim = simulate('custom', d.perMonth + 0.5, [{ f: debt, bal: 120000, rate: 24, min: 0 }]);
+  assert.ok(sim.months <= 12, 'закрылся за ' + sim.months);
+});
+
+test('план по сроку без ставки остался равными долями', () => {
+  setup([{ id: 'd', name: 'Другу', kind: 'debt', value: 120000, rate: 0, deadline: inMonths(12) }]);
+  assert.equal(Math.round(dlPlan(S.funds[0], fstate(S.funds[0], stats().get)).perMonth), 10000);
+});
+
+test('платёж по долгу считается оплаченным, когда деньги внесены в банк, а не когда отложены', () => {
+  const day = new Date().getDate();
+  const debt = { id: 'd', name: 'Кредитка', kind: 'debt', value: 100000, minPay: 10000, payDay: day };
+  setup([debt, rest]);
+  S.tx.push({ id: 'i', type: 'income', amount: 50000, alloc: { d: 10000, rest: 40000 }, date: m + '-01', month: m, createdAt: 1 });
+  let L = upcoming(7);
+  assert.equal(L.length, 1, 'отложенные деньги ещё не оплата');
+  assert.equal(L[0].paidNow, false);
+  assert.equal(L[0].enough, true);
+  assert.equal(Math.round(L[0].amount), 10000);
+  S.tx.push({ id: 'mv', type: 'move', from: 'acc', to: '', debt: 'd', amount: 10000, date: day10(), month: m, createdAt: 2 });
+  assert.equal(upcoming(7).length, 0, 'после внесения в банк платёж закрыт');
+});
+function day10() { return m + '-10'; }
