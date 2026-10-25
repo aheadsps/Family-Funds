@@ -39,7 +39,9 @@ service cloud.firestore {
       }
 
       match /{col}/{docId} {
-        allow read, delete: if col in ['funds', 'tx', 'wishes'] && isMember(hid);
+        // фонд наград (funds/reward) есть всегда, удалить его нельзя
+        allow read: if col in ['funds', 'tx', 'wishes'] && isMember(hid);
+        allow delete: if col in ['funds', 'tx', 'wishes'] && isMember(hid) && !(col == 'funds' && docId == 'reward');
         // запись — обычная карточка, а не мусор: не больше 60 полей
         allow create, update: if col in ['funds', 'tx', 'wishes'] && isMember(hid) && request.resource.data.size() <= 60;
       }
