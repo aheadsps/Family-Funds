@@ -135,7 +135,7 @@ section.block{display:flex;flex-direction:column;gap:10px}
 .btn.reward{background:var(--reward);color:#2B1A06}
 .btn.sm{padding:8px 12px;font-size:14px;border-radius:10px}
 .btn:disabled{opacity:.5;cursor:default}
-.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 .btn-row .wide{grid-column:1/-1}
 .link{background:none;border:0;color:var(--accent);font-weight:600;padding:6px 2px;text-decoration:underline;text-underline-offset:3px}
 .link.left{align-self:flex-start;padding-left:0}
@@ -154,7 +154,7 @@ section.block{display:flex;flex-direction:column;gap:10px}
 .ring b .ic{width:28px;height:28px;color:var(--accent)}
 .fig{font-weight:700;font-size:clamp(28px,8.4vw,38px);letter-spacing:-.02em;line-height:1.1}
 .fig.ok{color:var(--good);font-size:clamp(22px,6.4vw,28px)}
-.hero-split{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-top:12px;border-top:1px solid var(--line)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;padding-top:12px;border-top:1px solid var(--line)}
 .kv .k{font-size:12px;color:var(--muted)}
 .kv .v{font-weight:600;font-size:16px}
 .goal-chip{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:12px 14px;box-shadow:var(--card-shadow)}
@@ -257,7 +257,7 @@ details.tx summary::-webkit-details-marker{display:none}
 
 /* вкладки */
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:var(--sab)}
-nav.tabs .wrap{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding-block:6px;position:relative}
+nav.tabs .wrap{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding-block:6px;position:relative}
 nav.tabs button{position:relative;z-index:1;border:0;background:none;padding:6px 2px 7px;border-radius:12px;font-weight:600;font-size:12px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px;transition:color .2s}
 nav.tabs button .ic{width:22px;height:22px}
 nav.tabs button[aria-current="page"]{color:var(--accent)}
@@ -272,8 +272,8 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .x{width:36px;height:36px;border-radius:50%;border:0;background:var(--surface-2);display:grid;place-items:center}
 .x .ic{width:18px;height:18px}
 .x.sm{width:36px;height:36px}
-.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--surface-2);border-radius:var(--r-sm);padding:4px;gap:4px}
-.seg.three{grid-template-columns:repeat(3,1fr)}
+.seg{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);background:var(--surface-2);border-radius:var(--r-sm);padding:4px;gap:4px}
+.seg.three{grid-template-columns:repeat(3,minmax(0,1fr))}
 .seg button{border:0;background:none;padding:9px 6px;border-radius:9px;font-weight:600;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px}
 .seg button .ic{width:16px;height:16px}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--card-shadow)}
@@ -289,8 +289,8 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .who .av{margin-right:2px}
 .check{display:flex;gap:10px;align-items:center;font-size:14px}
 .check input{width:20px;height:20px;accent-color:var(--accent)}
-.emojis{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
-.emojis button{aspect-ratio:1;border-radius:10px;border:1px solid transparent;background:var(--field);font-size:19px;line-height:1;display:grid;place-items:center;padding:0}
+.emojis{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px}
+.emojis button{height:40px;min-width:0;border-radius:10px;border:1px solid transparent;background:var(--field);font-size:19px;line-height:1;display:grid;place-items:center;padding:0}
 .emojis button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
 
 /* раскладка дохода: тоже поток */
@@ -367,7 +367,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .flow-step b{display:block;font-weight:600}
 .flow-n{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:13px}
 .flow-arrow{text-align:center;color:var(--muted);font-size:13px;line-height:1.2}
-.wz-foot{position:sticky;bottom:0;display:grid;grid-template-columns:1fr 2fr;gap:10px;padding-block:12px calc(12px + var(--sab));background:var(--bg)}
+.wz-foot{position:sticky;bottom:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:10px;padding-block:12px calc(12px + var(--sab));background:var(--bg)}
 .row.wish > span:last-child{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
 
 /* праздник */
@@ -464,8 +464,8 @@ html.app-ready{background:var(--bg)}
   .sheet{max-height:100%;border-radius:14px 14px 0 0}
   .sheet .wrap{max-width:680px;padding-block:12px 4px;gap:10px}
   input.big{padding-block:9px}
-  .emojis{grid-template-columns:repeat(16,1fr);gap:4px}
-  .emojis button{font-size:16px;border-radius:8px}
+  .emojis{grid-template-columns:repeat(16,minmax(0,1fr));gap:4px}
+  .emojis button{height:32px;font-size:16px;border-radius:8px}
   .cele{overflow-y:auto;justify-content:flex-start;padding-block:20px calc(20px + var(--sab))}
   .cele>:first-child{margin-top:auto}
   .cele>:last-child{margin-bottom:auto}
@@ -487,7 +487,7 @@ html.app-ready{background:var(--bg)}
 @media (prefers-reduced-motion:reduce){.tgl,.tgl input,.tgl input::after{transition:none}}
 
 /* онбординг: типы фондов */
-.kgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
 .kcard{display:grid;grid-template-columns:32px 1fr;column-gap:10px;align-items:center;text-align:left;padding:10px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);box-shadow:var(--card-shadow);color:var(--ink);transition:border-color .2s,background-color .2s,transform .12s}
 .kcard:active{transform:scale(.98)}
 .kcard .kc-e{grid-row:1/3;font-size:16px;line-height:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--k-soft)}
