@@ -475,6 +475,11 @@ html.app-ready{background:var(--bg)}
 .how summary::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .2s}
 .how[open] summary::after{transform:rotate(-135deg) translateY(-2px)}
 .how p{margin:8px 0 0}
+.chg{display:flex;flex-direction:column;gap:10px;padding:12px 14px}
+.chg-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:10px;align-items:center}
+.chg-row b{display:block;font-weight:600;font-size:14px}
+.chg-row .amt{font-weight:700;white-space:nowrap}
+.chg-row .amt.neg,.chg-row .neg{color:var(--bad)}
 .tgls{display:grid;gap:8px}
 .tgl{display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--line);background:var(--surface);border-radius:var(--r-sm);cursor:pointer;transition:background-color .2s,border-color .2s}
 .tgl.on{border-color:var(--accent);background:var(--accent-soft)}

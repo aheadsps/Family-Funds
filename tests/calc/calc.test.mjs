@@ -12,8 +12,8 @@ const debts = block(/^function orderDebts/, /^function debtSummary/);
 const eta = block(/^function etaSim/, /^function wzMetrics/);
 const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\nreturn {S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips};')(() => '');
-const { S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips } = A;
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\nreturn {S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome};')(() => '');
+const { S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -160,4 +160,76 @@ test('долг на одном платеже: подсказка «накопл
   const t = tips(monthPicture()).find(x => x.title.includes('накоплено'));
   assert.ok(t, 'нет подсказки');
   assert.equal(t.act.act, 'pay-lump');
+});
+
+// доход записан и разложен как в приложении
+function addIncome(amount, taxable = true) {
+  const d = distribute(amount, taxable); const alloc = {};
+  d.rows.forEach(r => { if (r.give) alloc[r.f.id] = r.give; }); if (d.free) alloc._free = d.free;
+  const t = { id: 'inc' + S.tx.length, type: 'income', amount, taxable, alloc, date: m + '-03', month: m, createdAt: S.tx.length + 1 };
+  S.tx.push(t); return t;
+}
+const taxF = { id: 'tax', name: 'Налог', kind: 'percent', value: 6, taxOnly: true };
+const ccF = { id: 'cc', name: 'Кредитка', kind: 'debt', value: 200000, minPay: 10000 };
+const sumA = a => Object.values(a).reduce((x, y) => x + y, 0);
+
+test('пришло меньше: налог пересчитан, разница снята с накоплений и сверх плана, еда и минимальный платёж не тронуты', () => {
+  setup([taxF, food, ccF, rest]);
+  const t = addIncome(100000);
+  const na = reallocIncome(t, 85000, true);
+  assert.equal(sumA(na), 85000);
+  assert.equal(na.tax, 5100);
+  assert.equal(na.food, 30000);
+  assert.ok(na.cc >= 10000, 'минимальный платёж по долгу на месте');
+  assert.ok(na.cc < t.alloc.cc, 'сокращено досрочное погашение');
+});
+
+test('пришло меньше: награды уменьшаются пропорционально доходу', () => {
+  setup([taxF, food, ccF, { id: 'rw', name: 'Награды', kind: 'reward', value: 10 }, rest]);
+  const t = addIncome(100000);
+  const na = reallocIncome(t, 85000, true);
+  assert.equal(sumA(na), 85000);
+  assert.equal(na.rw, Math.round(t.alloc.rw * 0.85));
+});
+
+test('пришло сильно меньше: после всего сверх плана обязательное режется пропорционально', () => {
+  setup([taxF, food, comm, rest]);
+  const t = addIncome(100000);
+  const na = reallocIncome(t, 20000, true);
+  assert.equal(sumA(na), 20000);
+  assert.equal(na.tax, 1200);
+  assert.ok(!na.rest, 'накопления сняты первыми');
+  assert.ok(na.food > na.com && Math.abs(na.food / na.com - 6) < 0.1, 'еда и связь урезаны в пропорции 30 000 : 5 000');
+});
+
+test('пришло больше: добавка разложена как обычный доход, уже заполненное не переполняется', () => {
+  setup([taxF, food, ccF, rest]);
+  const t = addIncome(50000);
+  const na = reallocIncome(t, 120000, true);
+  assert.equal(sumA(na), 120000);
+  assert.equal(na.tax, 7200);
+  assert.equal(na.food, 30000);
+});
+
+test('сняли галочку «облагается налогом»: налог возвращается в раскладку', () => {
+  setup([taxF, food, rest]);
+  const t = addIncome(100000);
+  const na = reallocIncome(t, 100000, false);
+  assert.ok(!na.tax);
+  assert.equal(sumA(na), 100000);
+  assert.equal(na.food, 30000);
+});
+
+test('изменение суммы дохода: деньги сходятся до рубля, отрицательных частей нет (2000 случаев)', () => {
+  const kinds = ['monthly', 'goal', 'debt', 'percent', 'reward', 'rest']; const r = n => Math.floor(Math.random() * n);
+  for (let it = 0; it < 2000; it++) {
+    const fs_ = Array.from({ length: 1 + r(6) }, (_, i) => { const k = kinds[r(6)];
+      return { id: 'f' + i, name: 'F' + i, kind: k, value: k === 'percent' ? r(30) : k === 'reward' ? r(20) : 1000 * (1 + r(80)), minPay: k === 'debt' ? r(3) * 3000 : 0, taxOnly: k === 'percent' && r(2) === 0, pct: (k === 'goal' || k === 'debt') && r(4) === 0 ? 1 + r(20) : 0 }; });
+    setup(fs_); for (let j = 0; j < r(3); j++) addIncome(1000 * (1 + r(100)));
+    const t = addIncome(1000 * (1 + r(150)));
+    const amt = 1000 * (1 + r(200)), tx = r(2) === 0;
+    const na = reallocIncome(t, amt, tx);
+    assert.equal(sumA(na), amt, JSON.stringify({ fs_, amt }));
+    assert.ok(Object.values(na).every(v => v > 0));
+  }
 });

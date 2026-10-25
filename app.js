@@ -174,6 +174,55 @@ function distribute(amount,taxable,o={}){
   const restF=funds.find(f=>f.kind==='rest'); if(restF&&rem>0){give[restF.id]+=rem;rem=0}
   return {rows:funds.map(f=>({f,give:give[f.id]})),free:rem,surplus,mandatory,short:Math.max(0,Q-mandatory)};
 }
+/* Изменение суммы дохода. Раскладка не пересчитывается с нуля, иначе деньги незаметно переедут между фондами:
+   процентные фонды (налог и др.) пересчитываются от новой суммы, добавка раскладывается как обычный доход,
+   а нехватка снимается в обратном порядке раскладки: без фонда, накопления, награды (пропорционально доходу), цели и долги
+   снизу очереди, остаток наград, и только потом обязательное (пропорционально тому, сколько каждый фонд получил). */
+function reallocIncome(t,amount,taxable){
+  const funds=activeFunds(), alloc={}, base=stats(t.id);
+  for(const [k,v] of Object.entries(t.alloc||{})) if(Math.round(+v)) alloc[k]=Math.round(+v);
+  if(!t.found) for(const f of funds){
+    const pr=pctRate(f); if(!(pr>0)) continue;
+    let g=f.kind==='percent'&&f.taxOnly&&!taxable?0:Math.round(amount*pr/100);
+    if(f.kind!=='percent'){const s=fstate(f,base.get);g=Math.min(g,Math.max(0,Math.round(f.kind==='debt'?s.remaining:s.left)))}
+    alloc[f.id]=g;
+  }
+  let diff=amount-sum(Object.values(alloc));
+  if(diff>0){
+    // состояние фондов вместе с этим доходом, чтобы добавка не заполнила уже заполненное
+    const inM=t.month===curMonth(), get=id=>{const s={...base.get(id)},x=alloc[id]||0;s.alloc+=x;if(inM)s.allocM+=x;return s};
+    const d=distribute(diff,taxable,{get,noPct:true});
+    d.rows.forEach(r=>{if(r.give)alloc[r.f.id]=(alloc[r.f.id]||0)+r.give}); if(d.free)alloc._free=(alloc._free||0)+d.free;
+  } else if(diff<0){
+    let cut=-diff;
+    const take=id=>{const x=Math.min(alloc[id]||0,cut);if(x>0){alloc[id]-=x;cut-=x}};
+    const share=ids=>{const tot=sum(ids.map(id=>alloc[id]||0)); if(!(tot>0)||cut<=0) return; const c=Math.min(cut,tot);
+      const parts=ids.map(id=>{const e=c*(alloc[id]||0)/tot;return {id,g:Math.floor(e),fr:e-Math.floor(e)}}); let left=c-sum(parts.map(p=>p.g));
+      parts.sort((x,y)=>y.fr-x.fr).forEach(p=>{if(left>0&&p.g<(alloc[p.id]||0)){p.g++;left--}}); parts.forEach(p=>{alloc[p.id]-=p.g;cut-=p.g})};
+    const rev=funds.slice().reverse(), active=new Set(funds.map(f=>f.id));
+    take('_free'); Object.keys(alloc).filter(id=>id!=='_free'&&!active.has(id)).forEach(take);
+    rev.filter(f=>f.kind==='rest').forEach(f=>take(f.id));
+    // награды берут процент от денег сверх плана, поэтому уменьшаются вместе с доходом
+    const k=t.amount>0?amount/t.amount:1;
+    rev.filter(f=>f.kind==='reward').forEach(f=>{const a=alloc[f.id]||0,x=Math.min(cut,Math.max(0,a-Math.round(a*k)));if(x>0){alloc[f.id]-=x;cut-=x}});
+    rev.filter(f=>(f.kind==='goal'||f.kind==='debt')&&!(+f.pct>0)).forEach(f=>take(f.id));
+    rev.filter(f=>f.kind==='reward').forEach(f=>take(f.id));
+    share(funds.filter(f=>f.kind==='monthly').map(f=>f.id));
+    share(Object.keys(alloc));
+  }
+  for(const k in alloc) if(!(alloc[k]>0)) delete alloc[k];
+  return alloc;
+}
+// Что станет с фондами, если доход убрать (sign −1) или изменить раскладку: строки «фонд, изменение, баланс после»
+function allocEffect(delta){
+  const {get}=stats(); const out=[];
+  for(const [id,v] of Object.entries(delta)){ const d=Math.round(+v); if(!d) continue;
+    if(id==='_free'){out.push({id,f:'_free',name:'Без фонда',d,after:fstate({id:'_free',kind:'goal',value:0},get).balance+d});continue}
+    const f=S.funds.find(x=>x.id===id); if(!f) continue; const s=fstate(f,get);
+    out.push(f.kind==='debt'?{id,f,name:f.name,d,debt:true,after:s.remaining-d}:{id,f,name:f.name,d,after:s.balance+d});
+  }
+  return out;
+}
 // Короткая сводка раскладки по группам
 const GROUPS=[['tax','Налог и проценты',k=>k==='percent'],['life','Платежи и жизнь',k=>k==='monthly'],['debt','Долги',k=>k==='debt'],['goal','Цели',k=>k==='goal'],['reward','Награды',k=>k==='reward'],['rest','Накопления',k=>k==='rest']];
 function groupSplit(rows,free){
@@ -614,6 +663,23 @@ function splitLine(d){
   if(!G.length) return '';
   return `<div class="split">${G.map(g=>`<div class="sp-row"><span>${esc(g.t)}${g.n.length&&g.id!=='tax'?`<small>${esc(g.n.slice(0,3).join(', '))}${g.n.length>3?'…':''}</small>`:''}</span><b>${fmt(g.v)}</b></div>`).join('')}</div>`;
 }
+function effectRows(rows){
+  return `<div class="list chg">${rows.map(r=>{const neg=!r.debt&&r.after<-0.5;
+    const note=r.debt?`останется погасить ${fmt(Math.max(0,r.after))}`:`в фонде станет <span class="${neg?'neg':''}">${fmt(r.after)}</span>`+(neg?(r.f&&r.f.kind==='monthly'?' · минус закроет следующий доход':' · фонд уйдёт в минус'):'');
+    return `<div class="chg-row">${fundIcon(r.f,'sm')}<div><b>${esc(r.name)}</b><span class="note">${note}</span></div><span class="amt ${r.d<0?'neg':''}">${r.d>0?'+':'−'}${fmt(Math.abs(r.d))}</span></div>`}).join('')}</div>`;
+}
+function openDeleteIncome(t){
+  const rows=allocEffect(Object.fromEntries(Object.entries(t.alloc||{}).map(([k,v])=>[k,-v])));
+  const minus=rows.filter(r=>!r.debt&&r.after<-0.5);
+  openSheet(`${sheetHead('Удалить доход')}
+  <p class="note">Доход ${fmt(t.amount)} от ${esc(dateLabel(t.date))}${t.note?` («${esc(t.note)}»)`:''}. Его деньги уйдут из фондов:</p>
+  ${effectRows(rows)}
+  ${minus.length?`<div class="tip warn"><span class="dot"></span><div><b>${minus.length===1?`«${esc(minus[0].name)}» уйдёт в минус`:`${minus.length} ${plural(minus.length,'фонд уйдёт','фонда уйдут','фондов уйдут')} в минус`}</b><span class="muted small">Из них уже потратили. Минус у платежей в месяц закроет следующий доход, у остальных фондов его можно закрыть переводом.</span></div></div>`:''}
+  ${t.acc&&accById(t.acc)?`<p class="note">Остаток «${esc(accName(t.acc))}» в «Ресурсах» уменьшится на ${fmt(t.amount)}.</p>`:''}
+  <div class="btn-row"><button class="btn danger" id="dDel">${ic('trash')}Удалить доход</button><button class="btn ghost" data-act="close">Отмена</button></div>`,()=>{
+    $('#dDel').addEventListener('click',()=>{closeSheet();deleteTx(t.id)});
+  });
+}
 // Доход и «разложить» без ручной раскладки: сумма делится по правилам фондов
 function openIncome(mode,tx){
   const isFree=mode==='free', isFound=mode==='found', isEdit=!!tx, skip=isEdit?tx.id:null;
@@ -633,14 +699,22 @@ function openIncome(mode,tx){
   <button class="btn primary" id="inSave">${isEdit?'Сохранить изменения':isFree||isFound?'Разложить':'Записать'}</button>`, ()=>{
     const taxable=()=>$('#inTax')?$('#inTax').checked:false;
     const calc=()=>{const amt=Math.round(parseAmt($('#inAmt').value));return amt>0?distribute(amt,!isFree&&!isFound&&taxable(),{skip,noPct:isFree||isFound}):null};
-    const draw=()=>{const d=calc(); const box=$('#planBox');
+    const edited=()=>{const amt=Math.round(parseAmt($('#inAmt').value));return amt>0?reallocIncome(tx,amt,hasTax?taxable():!tx.found):null};
+    const drawEdit=()=>{const box=$('#planBox'), na=edited();
+      if(!na){box.innerHTML='';return}
+      const delta={}; for(const k of new Set([...Object.keys(tx.alloc||{}),...Object.keys(na)])) delta[k]=(na[k]||0)-Math.round(+(tx.alloc||{})[k]||0);
+      const rows=allocEffect(delta);
+      box.innerHTML=rows.length?`<div class="eyebrow">Что изменится</div>${effectRows(rows)}<p class="note">Нехватка снимается сначала с накоплений, целей и наград, обязательные платежи в последнюю очередь. Добавка раскладывается как обычный доход.</p>`:'<p class="note">Раскладка по фондам не изменится.</p>'};
+    const draw=()=>{if(isEdit)return drawEdit(); const d=calc(); const box=$('#planBox');
       if(!d){box.innerHTML=`<p class="note">Деньги разойдутся по фондам сами: сначала налог, потом обязательное на месяц пропорционально размеру каждого фонда, остальное сверх плана.</p>`;return}
       box.innerHTML=`<div class="eyebrow">Разойдётся само</div>${splitLine(d)}${d.short>0.5?`<p class="note">На обязательное в этом месяце ещё не хватит ${fmt(d.short)}: эти деньги разделены между обязательными фондами пропорционально.</p>`:''}`};
     $('#inAmt').addEventListener('input',draw); $('#inTax')?.addEventListener('change',draw); draw();
     $('#inAmt').addEventListener('blur',()=>{const n=parseAmt($('#inAmt').value);if(n)$('#inAmt').value=nf.format(n)});
     $('#inSave').addEventListener('click',async()=>{
       const amt=Math.round(parseAmt($('#inAmt').value)); if(amt<=0){$('#inErr').textContent='Введите сумму больше нуля.';return}
-      const d=calc(); const alloc={}; d.rows.forEach(r=>{if(r.give>0)alloc[r.f.id]=r.give}); if(d.free>0)alloc._free=(alloc._free||0)+d.free;
+      let alloc={};
+      if(isEdit) alloc=edited();
+      else{const d=calc(); d.rows.forEach(r=>{if(r.give>0)alloc[r.f.id]=r.give}); if(d.free>0)alloc._free=(alloc._free||0)+d.free}
       if(isFree){
         if(amt>freeBal){$('#inErr').textContent=`Без фонда лежит только ${fmt(freeBal)}.`;return}
         delete alloc._free; const moved=sum(Object.values(alloc)); if(moved<=0){$('#inErr').textContent='Все фонды заполнены, раскладывать некуда.';return}
@@ -653,7 +727,7 @@ function openIncome(mode,tx){
       }
       const date=$('#inDate').value||today(); const note=$('#inNote').value.trim(); const acc=$('#inAcc')?$('#inAcc').value:'';
       if(acc) LS.set('ff-acc-in:'+S.hid,acc);
-      const data={amount:amt,date,month:date.slice(0,7),note,taxable:hasTax?taxable():true,alloc,acc};
+      const data={amount:amt,date,month:date.slice(0,7),note,taxable:hasTax?taxable():(isEdit?tx.taxable!==false:true),alloc,acc};
       if(isEdit) await write(async()=>{await DB.update('tx',tx.id,data)},'Доход изменён');
       else{await write(async()=>{await DB.add('tx',{type:'income',...data,by:S.uid||null,createdAt:Date.now()})},'Доход записан и разложен по фондам');
         if(acc) setTimeout(()=>openMoves(true),400)}
@@ -1259,7 +1333,7 @@ document.addEventListener('click',async e=>{
   else if(act==='edit-wish'){const w=S.wishes.find(x=>x.id===a.dataset.id);if(w&&S.canWrite)openWish(w)}
   else if(act==='hm'){S.histMonth=shiftMonth(S.histMonth,+a.dataset.d);S.enterNext=true;render()}
   else if(act==='edit-tx'){const t=S.tx.find(x=>x.id===a.dataset.id);if(t&&S.canWrite){if(t.type==='income')openIncome(null,t);else if(t.type==='expense')openExpense(t)}}
-  else if(act==='del-tx'){if(S.canWrite)deleteTx(a.dataset.id)}
+  else if(act==='del-tx'){if(S.canWrite){const t=S.tx.find(x=>x.id===a.dataset.id);if(t&&t.type==='income'&&t.alloc)openDeleteIncome(t);else deleteTx(a.dataset.id)}}
   else if(act==='go-res'){S.tab='res';S.enterNext=true;render();window.scrollTo(0,0)}
   else if(act==='new-acc'){if(S.canWrite)openAccount(null)}
   else if(act==='edit-acc'){const x=accById(a.dataset.id);if(x&&S.canWrite)openAccount(x)}
