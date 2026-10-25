@@ -381,7 +381,8 @@ let rotT;
 function relayout(){
   clearTimeout(rotT);
   rotT=setTimeout(()=>{
-    if(matchMedia('(orientation:landscape)').matches&&innerHeight<=500) return;
+    if(window.__lockPortrait)window.__lockPortrait();
+    if(document.documentElement.dataset.rot) return;
     const d=document.documentElement, y=scrollY; d.style.display='none'; void d.offsetHeight; d.style.display=''; scrollTo(0,y);
     moveTabInd(); fitSheet();
   },300);
@@ -583,6 +584,7 @@ function openSheet(html,onMount){
 }
 /* Шторка над клавиатурой iPhone: держим её в видимой области и не даём полю ввода уехать за край */
 function fitSheet(){
+  if(document.documentElement.dataset.rot) return;
   const sh=$('#sheet'), vv=window.visualViewport; if(!sh||sh.hidden||!vv) return;
   const kb=Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop));
   if(kb>60){sh.style.bottom=kb+'px';sh.style.maxHeight=Math.round(vv.height-8)+'px'}else{sh.style.bottom='';sh.style.maxHeight=''}
@@ -1827,6 +1829,7 @@ const TOUR=[
 const tourKey=()=>'ff-tour:'+(S.uid||'');
 let TR=null, tourWait=false;
 function maybeTour(){
+  if(document.documentElement.dataset.rot) return;
   if(TR||tourWait||S.status!=='ready'||S.tab!=='now'||!activeFunds().length||LS.get(tourKey())) return;
   tourWait=true;
   const go=()=>{

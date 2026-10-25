@@ -6,6 +6,24 @@
 <style>html{background:#04081A}</style>
 <script>(function(){var d=document.documentElement;try{if(navigator.standalone===true||matchMedia('(display-mode: standalone)').matches)d.classList.add('pwa');if(sessionStorage.getItem('potok-splash')==='1')d.classList.add('sp-seen')}catch(e){}})();</script>
 <title>Поток</title>
+<script>
+/* Только вертикаль: iPhone не умеет блокировать поворот сайта, поэтому в горизонтальном положении телефона
+   помечаем html атрибутом data-rot, а стили поворачивают приложение обратно. ccw: телефон повёрнут против часовой стрелки. */
+(function(){
+  function lock(){
+    var d=document.documentElement;
+    try{
+      var land=matchMedia('(orientation:landscape)').matches&&matchMedia('(pointer:coarse)').matches&&Math.min(innerWidth,innerHeight)<=500;
+      if(!land){if(d.dataset.rot){delete d.dataset.rot}return}
+      var a=(screen.orientation&&typeof screen.orientation.angle==='number')?screen.orientation.angle:(typeof window.orientation==='number'?window.orientation:90);
+      if(a>180)a-=360;
+      d.dataset.rot=a<0?'cw':'ccw';
+    }catch(e){}
+  }
+  window.__lockPortrait=lock; lock();
+  addEventListener('resize',lock); addEventListener('orientationchange',function(){setTimeout(lock,50);setTimeout(lock,350)});
+})();
+</script>
 <meta name="description" content="Поток: семейный бюджет. Доходы раскладываются по фондам, траты списываются, план погашения долгов и подсказки по покупкам.">
 <meta name="theme-color" content="#F1F6FA" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0A1520" media="(prefers-color-scheme: dark)">
@@ -106,8 +124,8 @@ button{cursor:pointer}
 img{max-width:100%}
 .ic{width:20px;height:20px;flex:none;display:block}
 
-.wrap{max-width:560px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-header.top{position:sticky;top:0;padding-top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.wrap{max-width:560px;margin:0 auto;padding-left:max(16px,var(--sal));padding-right:max(16px,var(--sar))}
+header.top{position:sticky;top:0;padding-top:var(--sat);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
 .top-in{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:10px}
 .eyebrow{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600}
 .brand{display:flex;align-items:center;gap:11px;min-width:0}
@@ -117,7 +135,7 @@ h1.brand-name{font-family:var(--f-display);font-weight:600;font-size:21px;line-h
 @media (prefers-reduced-motion:no-preference){.brand-wave{animation:spWave 4s linear infinite}}
 h2{font-weight:600;font-size:17px;margin:0;letter-spacing:-.005em}
 h3{font-weight:600;font-size:15px;margin:0}
-main{padding-block:16px calc(104px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:22px}
+main{padding-block:16px calc(104px + var(--sab));display:flex;flex-direction:column;gap:22px}
 section.block{display:flex;flex-direction:column;gap:10px}
 .sec-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .muted{color:var(--muted)}
@@ -256,7 +274,7 @@ details.tx summary::-webkit-details-marker{display:none}
 .empty{border-style:dashed;padding:22px 18px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 
 /* вкладки */
-nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:var(--sab)}
 nav.tabs .wrap{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding-block:6px;position:relative}
 nav.tabs button{position:relative;z-index:1;border:0;background:none;padding:6px 2px 7px;border-radius:12px;font-weight:600;font-size:12px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px;transition:color .2s}
 nav.tabs button .ic{width:22px;height:22px}
@@ -266,7 +284,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 
 /* шторки */
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:20}
-.sheet{overflow-x:hidden;overscroll-behavior:contain;position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--sheet);border-radius:20px 20px 0 0;max-height:92%;overflow-y:auto;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));box-shadow:var(--sheet-shadow)}
+.sheet{overflow-x:hidden;overscroll-behavior:contain;position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--sheet);border-radius:20px 20px 0 0;max-height:92%;overflow-y:auto;padding-bottom:calc(16px + var(--sab));box-shadow:var(--sheet-shadow)}
 .sheet .wrap{display:flex;flex-direction:column;gap:14px;padding-block:18px 4px}
 .sheet-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .x{width:36px;height:36px;border-radius:50%;border:0;background:var(--surface-2);display:grid;place-items:center}
@@ -328,7 +346,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .inline-edit{display:flex;gap:8px;align-items:center}
 .inline-edit input{flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--field);min-width:0}
 
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(88px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--toast-bg);color:var(--toast-ink);padding:10px 12px 10px 16px;border-radius:var(--r-sm);font-weight:600;font-size:14px;max-width:calc(100% - 32px);width:max-content;display:flex;align-items:center;gap:14px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(88px + var(--sab));z-index:30;background:var(--toast-bg);color:var(--toast-ink);padding:10px 12px 10px 16px;border-radius:var(--r-sm);font-weight:600;font-size:14px;max-width:calc(100% - 32px);width:max-content;display:flex;align-items:center;gap:14px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
 .toast button{border:0;background:none;color:var(--toast-act);font-weight:700;padding:4px 6px;display:inline-flex;align-items:center;gap:6px}
 .toast button .ic{width:16px;height:16px}
 .ro{background:var(--warn-soft);color:var(--warn);border-radius:var(--r-sm);padding:10px 14px;font-size:14px}
@@ -367,11 +385,11 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .flow-step b{display:block;font-weight:600}
 .flow-n{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:13px}
 .flow-arrow{text-align:center;color:var(--muted);font-size:13px;line-height:1.2}
-.wz-foot{position:sticky;bottom:0;display:grid;grid-template-columns:1fr 2fr;gap:10px;padding-block:12px calc(12px + env(safe-area-inset-bottom,0px));background:var(--bg)}
+.wz-foot{position:sticky;bottom:0;display:grid;grid-template-columns:1fr 2fr;gap:10px;padding-block:12px calc(12px + var(--sab));background:var(--bg)}
 .row.wish > span:last-child{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
 
 /* праздник */
-.cele{position:fixed;inset:0;z-index:40;background:radial-gradient(120% 70% at 50% 30%,var(--reward-soft),var(--bg) 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px 24px calc(32px + env(safe-area-inset-bottom,0px));text-align:center}
+.cele{position:fixed;inset:0;z-index:40;background:radial-gradient(120% 70% at 50% 30%,var(--reward-soft),var(--bg) 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px 24px calc(32px + var(--sab));text-align:center}
 .cele canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .cele .ce-in{position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;max-width:380px}
 .stamp{font-family:var(--f-display);font-weight:700;font-size:clamp(26px,8.5vw,38px);line-height:1.15;letter-spacing:.04em;text-transform:uppercase;color:var(--reward-ink);border:4px solid currentColor;border-radius:16px;padding:8px 18px;transform:rotate(-7deg);margin:4px 0 14px}
@@ -442,14 +460,16 @@ html.app-ready{background:var(--bg)}
 .kind-hint p{margin:0 0 6px}.kind-hint p:last-child{margin:0}
 .kind-hint.reward{background:var(--reward-soft);color:var(--ink)}
 .kind-hint.reward b{color:var(--reward-ink)}
-/* только вертикаль: iPhone не умеет блокировать поворот, поэтому в горизонтальном положении закрываем экран подсказкой */
-#rotate{display:none}
-@media (orientation:landscape) and (max-height:500px) and (pointer:coarse){
-  html{overflow:hidden}
-  #rotate{display:flex;position:fixed;inset:0;z-index:1000;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:24px;text-align:center;background:var(--bg);color:var(--ink)}
-  #rotate .ri{font-size:40px;line-height:1}
-  #rotate span{color:var(--muted);font-size:14px}
-}
+/* Только вертикаль. iPhone не умеет блокировать поворот сайта, поэтому в горизонтальном положении телефона приложение
+   поворачивается обратно (html[data-rot], см. скрипт в <head>) и остаётся вертикальным относительно самого телефона.
+   Отступы безопасной зоны (--sat, --sar, --sab, --sal) переставляются под повёрнутое положение. */
+:root{--sat:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px)}
+html[data-rot]{overflow:hidden}
+html[data-rot] body{position:fixed;top:0;left:0;width:100vh;width:100dvh;height:100vw;min-height:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:none;transform-origin:0 0}
+html[data-rot="ccw"]{--sat:env(safe-area-inset-left,0px);--sab:env(safe-area-inset-right,0px);--sal:env(safe-area-inset-bottom,0px);--sar:env(safe-area-inset-top,0px)}
+html[data-rot="ccw"] body{transform:translateY(100vh) rotate(-90deg);transform:translateY(100dvh) rotate(-90deg)}
+html[data-rot="cw"]{--sat:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-left,0px);--sal:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-bottom,0px)}
+html[data-rot="cw"] body{transform:translateX(100vw) rotate(90deg)}
 .tgls{display:grid;gap:8px}
 .tgl{display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--line);background:var(--surface);border-radius:var(--r-sm);cursor:pointer;transition:background-color .2s,border-color .2s}
 .tgl.on{border-color:var(--accent);background:var(--accent-soft)}
@@ -552,7 +572,6 @@ html.app-ready{background:var(--bg)}
 <script>['gesturestart','gesturechange','gestureend'].forEach(function(e){document.addEventListener(e,function(ev){ev.preventDefault()})});var _t=0;document.addEventListener('touchend',function(ev){if(ev.target.closest&&ev.target.closest('input,select,textarea'))return;var n=Date.now();if(n-_t<350)ev.preventDefault();_t=n},{passive:false});</script>
 </head>
 <body>
-<div id="rotate" role="alert"><div class="ri" aria-hidden="true">📱</div><b>Переверните телефон</b><span>Поток работает в вертикальном положении</span></div>
 <div id="splash" aria-hidden="true">
   <svg class="sp-mark" viewBox="0 0 100 100" focusable="false">
     <defs>
