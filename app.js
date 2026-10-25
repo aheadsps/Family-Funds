@@ -369,13 +369,27 @@ function render(){
   maybeTour();
 }
 const calm=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+const RAIL='(orientation:landscape) and (max-height:500px)';   // низкий экран: вкладки в боковой панели
 function moveTabInd(){
   const ind=$('#tabInd'); const b=document.querySelector('nav.tabs button[aria-current="page"]'); if(!ind||!b||!b.offsetWidth)return;
-  const first=!ind.style.width; if(first)ind.classList.add('noanim');
-  ind.style.width=b.offsetWidth+'px'; ind.style.transform=`translateX(${b.offsetLeft}px)`;
+  const first=!ind.dataset.ready; if(first)ind.classList.add('noanim');
+  if(matchMedia(RAIL).matches){ind.style.width='';ind.style.setProperty('--ih',b.offsetHeight+'px');ind.style.transform=`translateY(${b.offsetTop}px)`}
+  else{ind.style.removeProperty('--ih');ind.style.width=b.offsetWidth+'px';ind.style.transform=`translateX(${b.offsetLeft}px)`}
+  ind.dataset.ready='1';
   if(first)requestAnimationFrame(()=>requestAnimationFrame(()=>ind.classList.remove('noanim')));
 }
 addEventListener('resize',()=>moveTabInd());
+// iPhone после поворота иногда оставляет сдвинутую вёрстку: после поворота пересчитываем её заново
+let rotT;
+function relayout(){
+  clearTimeout(rotT);
+  rotT=setTimeout(()=>{
+    const d=document.documentElement, y=scrollY; d.style.display='none'; void d.offsetHeight; d.style.display=''; scrollTo(0,y);
+    moveTabInd(); fitSheet();
+  },300);
+}
+addEventListener('orientationchange',relayout);
+matchMedia('(orientation:portrait)').addEventListener('change',relayout);
 function countUp(root){
   if(calm())return;
   root.querySelectorAll('[data-count]').forEach(el=>{const to=+el.dataset.count||0,t0=performance.now(),d=550;
@@ -438,7 +452,7 @@ function paymentsBlock(){
 /* ---------- вкладка «Фонды» ---------- */
 function renderFunds(){
   const funds=activeFunds();
-  let h=`<section class="block"><h2>Очередь фондов</h2><p class="note">Каждый доход делится в три шага. 1) Налог и процентные фонды берут свою долю. 2) Обязательное на месяц: платежи (еда, связь, жильё), минимальные платежи по долгам и взносы в цели со сроком. Если денег хватает, все получают полностью, если нет, деньги делятся между ними пропорционально нехватке. 3) Всё сверх этого: награды, потом долги и цели по очереди фондов, остаток в накопления. Порядок меняется перетаскиванием за ручку справа и важен только для третьего шага.</p></section>`;
+  let h=`<section class="block"><h2>Очередь фондов</h2><details class="how"><summary>Как делятся доходы</summary><p class="note">Каждый доход делится в три шага. 1) Налог и процентные фонды берут свою долю. 2) Обязательное на месяц: платежи (еда, связь, жильё), минимальные платежи по долгам и взносы в цели со сроком. Если денег хватает, все получают полностью, если нет, деньги делятся между ними пропорционально нехватке. 3) Всё сверх этого: награды, потом долги и цели по очереди фондов, остаток в накопления. Порядок меняется перетаскиванием за ручку справа и важен только для третьего шага.</p></details></section>`;
   if(!funds.length) return h+emptyFunds();
   const {get}=stats();
   h+=`<div class="list river" id="fundList">${funds.map((f,i)=>{
