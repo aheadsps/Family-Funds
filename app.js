@@ -1316,6 +1316,11 @@ document.addEventListener('click',async e=>{
   const a=e.target.closest('[data-act]'); if(!a)return;
   const act=a.dataset.act;
   if(await onGateAction(act,a))return;
+  if(act==='refresh-app'){
+    // сбрасываем офлайн-кэш и сервис-воркер, чтобы телефон точно взял свежую версию; данные семьи не затрагиваются
+    try{for(const k of await caches.keys()) await caches.delete(k); for(const r of await navigator.serviceWorker.getRegistrations()) await r.unregister()}catch(e){}
+    location.reload(); return true;
+  }
   if(act==='tour'){closeSheet();LS.del(tourKey());if(TR)tourEnd();LS.del(tourKey());S.tab='now';S.enterNext=true;render();window.scrollTo(0,0);return}
   if(act==='wz-restart'){closeSheet();S.wz=newWizard(activeFunds().length?'existing':'new');S.status='setup';S.enterNext=true;render();window.scrollTo(0,0);return}
   if(await wzAction(act,a))return;
@@ -2054,6 +2059,7 @@ function openSettings(){
   <div class="field"><span class="lbl">Напоминания</span><button class="btn ghost" data-act="ics">${ic('calendar-plus')}Платежи в календарь телефона</button><span class="note">Каждый платёж с указанным днём станет ежемесячным событием с напоминанием накануне. Если поменяете дни или суммы, добавьте файл заново.</span></div>
   <div class="field"><span class="lbl">Данные</span><div class="btn-row"><button class="btn ghost" data-act="export-csv">${ic('file-spreadsheet')}Записи в CSV</button><button class="btn ghost" data-act="export-json">${ic('file-braces')}Копия JSON</button></div><span class="note">CSV открывается в Excel и Google Таблицах. JSON — полная копия бюджета на случай сбоя или переезда.</span></div>
   <button class="btn ghost" data-act="tour">${ic('lightbulb')}Показать подсказки</button>
+  <button class="btn ghost" data-act="refresh-app">${ic('refresh-cw')}Обновить приложение</button>
   <button class="btn ghost" data-act="wz-restart">Пройти настройку заново</button>
   <div class="err" id="sErr"></div>
   <button class="btn danger" data-act="logout">Выйти из аккаунта</button>`,()=>{
@@ -2103,7 +2109,10 @@ document.querySelectorAll('[data-ic]').forEach(el=>{el.outerHTML=ic(el.dataset.i
 $('#setBtn').innerHTML=ic('menu');
 render();
 (async()=>{
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{})}
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='update')toast('Вышла новая версия приложения',{label:'Обновить',icon:'refresh-cw',fn:()=>location.reload()})});
+  }
   if(!DB.configured){S.status='config';render();return}
   try{await DB.init()}catch(e){S.status='config';S.gateErr='Не удалось загрузить библиотеки Firebase. Проверьте интернет и обновите страницу.';render();return}
   DB.setErrorHandler(e=>{if(e&&e.code==='permission-denied')toast('Сервер не принял запись: нет доступа.');else if(e&&e.code!=='unavailable')toast('Запись не сохранилась на сервере. Попробуйте ещё раз.')});
