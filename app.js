@@ -82,6 +82,9 @@ function stats(skip){
         else c.spent+=a;
       }
       if(inM) c.spentM+=amt;
+    } else if(t.type==='paidmark'){
+      // «Уже оплачено»: платёж месяца выполнен, но деньги фонда не трогаем (трата не записана); долгов отметка не касается
+      const pf=S.funds.find(x=>x.id===t.fundId); if(pf&&pf.kind==='monthly'&&inM) get(t.fundId).spentM+=+t.amount||0;
     } else if(t.type==='transfer'){
       get(t.from).spent+=+t.amount||0;
       for(const [fid,a] of Object.entries(t.alloc||{})){const s=get(fid);s.alloc+=+a||0;if(inM)s.allocM+=+a||0}
@@ -499,7 +502,7 @@ function paymentsBlock(){
   return `<section class="block"><div class="sec-head"><h2>Ближайшие платежи</h2><button class="btn sm ghost" data-act="ics">${ic('calendar-plus')}В календарь</button></div><div class="list">${L.map(p=>{
     const debt=p.f.kind==='debt';
     const st=p.paidNow?'<span class="chip v-good">оплачено</span>':p.enough===null?'':p.enough?`<span class="chip v-good">${debt?'деньги отложены, внесите в банк':'в фонде хватает'}</span>`:`<span class="chip v-warn">${debt?'отложено не всё, не хватает':'в фонде не хватает'} ${fmt(p.short)}</span>`;
-    return `<div class="pay ${p.overdue?'overdue':''}">${fundIcon(p.f,'sm')}<div class="pb"><div class="pn">${esc(p.f.name)}</div><div class="note"><span class="when">${esc(p.when)}</span></div><div>${st}</div></div><div class="pr"><span class="pa">${p.amount>0?fmt(p.amount):''}</span>${S.canWrite&&!p.paidNow?`<button class="btn sm ghost" data-act="pay" data-id="${esc(p.f.id)}" data-amt="${Math.round(p.amount||0)}">Оплатил</button>`:''}</div></div>`}).join('')}</div></section>`;
+    return `<div class="pay ${p.overdue?'overdue':''}">${fundIcon(p.f,'sm')}<div class="pb"><div class="pn">${esc(p.f.name)}</div><div class="note"><span class="when">${esc(p.when)}</span></div><div>${st}</div></div><div class="pr"><span class="pa">${p.amount>0?fmt(p.amount):''}</span>${S.canWrite&&!p.paidNow?`<button class="btn sm ghost" data-act="pay" data-id="${esc(p.f.id)}" data-amt="${Math.round(p.amount||0)}">Оплатил</button><button class="link sm" data-act="paid-mark" data-id="${esc(p.f.id)}" data-amt="${Math.round(p.amount||0)}">Уже оплачено</button>`:''}</div></div>`}).join('')}</div></section>`;
 }
 
 /* ---------- вкладка «Фонды» ---------- */
@@ -613,6 +616,10 @@ function txRow(t){
     const title=t.debt?`Платёж в «${fundName(t.debt)}»`:`Перевод на «${accName(t.to)}»`;
     const who=t.by?`${avatar(t.by)}<span data-who="${esc(t.by)}">${esc(S.names[t.by]||'')}</span>`:'';
     return `<details class="tx"><summary><span class="fi sm k-rest" aria-hidden="true">🔁</span><span class="t-main"><span class="t-title">${esc(title)}</span><br><span class="note">с «${esc(accName(t.from))}»${who?' · ':''}${who}</span></span><span class="t-amt">${fmt(t.amount)}</span></summary><div class="tx-body"><div class="note">Деньги переложены между картами, фонды не изменились.</div>${S.canWrite?`<div class="tx-acts"><button class="btn sm danger" data-act="del-tx" data-id="${esc(t.id)}">${ic('trash')}Удалить</button></div>`:''}</div></details>`;
+  }
+  if(t.type==='paidmark'){
+    const who=t.by?`${avatar(t.by)}<span data-who="${esc(t.by)}">${esc(S.names[t.by]||'')}</span>`:'';
+    return `<details class="tx"><summary><span class="fi sm k-rest" aria-hidden="true">✅</span><span class="t-main"><span class="t-title">Отмечен оплаченным: «${esc(fundName(t.fundId))}»</span><br><span class="note">без записи траты${who?' · ':''}${who}</span></span><span class="t-amt">${t.amount>0?fmt(t.amount):''}</span></summary><div class="tx-body"><div class="note">Платёж уже оплачен: обязательство месяца по нему закрыто, а деньги в фондах и на картах не менялись. Удалите отметку, и платёж снова появится в «Ближайших платежах».</div>${S.canWrite?`<div class="tx-acts"><button class="btn sm danger" data-act="del-tx" data-id="${esc(t.id)}">${ic('trash')}Удалить отметку</button></div>`:''}</div></details>`;
   }
   const isIn=t.type==='income', isTr=t.type==='transfer';
   const title=t.note||(isIn?'Доход':isTr?'Перевод между фондами':fundName(t.fundId));
@@ -1095,6 +1102,8 @@ function debtPaidM(id){
     else if(t.type==='expense'&&t.fundId===id) v+=+t.amount||0; }
   return v;
 }
+// Отметка «Уже оплачено»: платёж этого месяца оплачен, но трату записывать не нужно (деньги уже учтены). Фонды и карты не меняются
+const paidMarked=id=>{const m=curMonth();return S.tx.some(t=>t.type==='paidmark'&&t.fundId===id&&t.month===m)};
 function upcoming(days=7){
   const {get}=stats(); const now=new Date(); const t0=new Date(now.getFullYear(),now.getMonth(),now.getDate()); const out=[];
   for(const f of activeFunds()){
@@ -1102,7 +1111,7 @@ function upcoming(days=7){
     const s=fstate(f,get), v=+f.value||0, mp=+f.minPay||0;
     if(f.kind==='debt'&&s.remaining<=0.5) continue;
     const paidM=f.kind==='debt'?debtPaidM(f.id):0;
-    const paidNow=f.kind==='monthly'?(v>0&&s.spentM>=v-0.5):(mp>0?paidM>=mp-0.5:paidM>0.5);
+    const paidNow=paidMarked(f.id)||(f.kind==='monthly'?(v>0&&s.spentM>=v-0.5):(mp>0?paidM>=mp-0.5:paidM>0.5));
     const thisDue=dueIn(t0.getFullYear(),t0.getMonth(),day);
     let due,amount,enough=null,short=0,overdue=false;
     if(!paidNow){
@@ -1163,11 +1172,11 @@ function exportCSV(){
   const q=v=>{v=String(v??'');return /[";\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
   const head=['Дата','Тип','Сумма','Фонд','Из фонда','Комментарий','Кто','Раскладка по фондам'];
   const rows=S.tx.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(t=>{
-    const type=t.type==='income'?(t.found?'Разложено с карт':'Доход'):t.type==='expense'?'Трата':t.type==='move'?(t.debt?'Платёж по долгу':'Перевод между картами'):'Перевод';
+    const type=t.type==='income'?(t.found?'Разложено с карт':'Доход'):t.type==='expense'?'Трата':t.type==='move'?(t.debt?'Платёж по долгу':'Перевод между картами'):t.type==='paidmark'?'Отметка об оплате':'Перевод';
     const fund=t.type==='expense'?fundName(t.fundId):'';
     const from=t.type==='expense'?(t.from&&t.from!==t.fundId?fundName(t.from):''):t.type==='transfer'?fundName(t.from):'';
     const alloc=Object.entries(t.alloc||{}).filter(([,a])=>a>0).map(([k,a])=>`${fundName(k)}: ${Math.round(a)}`).join(', ');
-    const note=t.type==='move'?`${accName(t.from)} → ${t.debt?fundName(t.debt):accName(t.to)}`:(t.note||'');
+    const note=t.type==='move'?`${accName(t.from)} → ${t.debt?fundName(t.debt):accName(t.to)}`:t.type==='paidmark'?fundName(t.fundId):(t.note||'');
     return [t.date,type,Math.round(+t.amount||0),fund,from,note,S.members[t.by]||'',alloc].map(q).join(';');
   });
   saveFile(`potok-zapisi-${today()}.csv`,'text/csv;charset=utf-8','\ufeff'+[head.join(';'),...rows].join('\r\n')+'\r\n');
@@ -1347,6 +1356,9 @@ document.addEventListener('click',async e=>{
   else if(act==='mv-all'){if(S.canWrite&&S.moves){a.disabled=true;try{for(const m of S.moves)await recordMove(m);closeSheet();toast('Всё отмечено, остатки на картах обновлены')}catch(e){toast('Не получилось сохранить.');a.disabled=false}}}
   else if(act==='go-funds'){S.tab='funds';S.enterNext=true;render();window.scrollTo(0,0)}
   else if(act==='pay-lump'){const f=fundById(a.dataset.id);if(f&&S.canWrite)openExpense(null,{fundId:f.id,amount:Math.round(fstate(f,stats().get).balance),note:'Платёж по долгу'})}
+  else if(act==='paid-mark'){const f=fundById(a.dataset.id);if(f&&S.canWrite){const date=today();
+    const id=await DB.add('tx',{type:'paidmark',fundId:f.id,amount:+a.dataset.amt||0,date,month:curMonth(),note:'',by:S.uid||null,createdAt:Date.now()});
+    toast(`«${f.name}» отмечен оплаченным`,{label:'Вернуть',fn:async()=>{try{await DB.del('tx',id);toast('Отметка снята')}catch(e){toast('Не получилось снять отметку.')}}})}}
   else if(act==='pay'){const f=fundById(a.dataset.id);if(f&&S.canWrite)openExpense(null,{fundId:f.id,amount:+a.dataset.amt||0})}
   else if(act==='ics')exportICS();
   else if(act==='export-csv')exportCSV();
@@ -1419,6 +1431,7 @@ function debtPending(){
   for(const t of S.tx){ if((+t.createdAt||0)<since) continue;
     if(t.type==='income'||t.type==='transfer') for(const [fid,a] of Object.entries(t.alloc||{})) if(debts.has(fid)) p[fid]=(p[fid]||0)+(+a||0);
     if(t.type==='move'&&t.debt&&debts.has(t.debt)) p[t.debt]=(p[t.debt]||0)-(+t.amount||0);
+    if(t.type==='paidmark'&&debts.has(t.fundId)) p[t.fundId]=(p[t.fundId]||0)-(+t.amount||0);
   }
   for(const k in p) if(p[k]<0.5) delete p[k];
   return p;
