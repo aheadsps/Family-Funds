@@ -281,7 +281,7 @@ function planCheck(P){
   const inc=usualIncome(); const {get,funds}=P;
   const mins=sum(funds.filter(f=>f.kind==='debt').map(f=>Math.min(+f.minPay||0,leftOf(f,get))));
   const rp=sum(funds.filter(f=>f.kind==='reward').map(f=>+f.value||0));
-  const free=Math.max(0,(inc*(1-P.pct/100)-P.totalMonthly-mins)*(1-rp/100));
+  const taxAmt=inc*P.pct/100, afterCore=Math.max(0,inc-taxAmt-P.totalMonthly-mins), rew=afterCore*rp/100, free=afterCore-rew;
   const items=[]; let ask=0;
   for(const f of funds){ if(f.kind!=='debt'&&f.kind!=='goal') continue;
     const s=fstate(f,get), d=livePlan(f,s);
@@ -290,7 +290,7 @@ function planCheck(P){
   }
   const eta=inc>0?etaSim(funds,inc,x=>leftOf(x,get)):{};
   items.forEach(it=>{const k=eta[it.f.id];it.eta=k==null?null:k;it.late=k==null||k>it.d.ml});
-  return {inc,known:inc>0,free,ask,items,late:items.filter(x=>x.late),ok:inc>0&&ask<=free+0.5};
+  return {inc,known:inc>0,taxAmt,life:P.totalMonthly,mins,rp,rew,free,ask,items,late:items.filter(x=>x.late),ok:inc>0&&ask<=free+0.5};
 }
 function tips(P){
   const out=[]; const {get,funds,mi}=P;
@@ -302,7 +302,7 @@ function tips(P){
   }
   if(P.planNet>0.5){const C=planCheck(P);
     if(!C.known) out.push({tone:'info',title:'Проверьте, реальны ли сроки',text:'Укажите обычный доход семьи в меню → Семья, и приложение посчитает, успеваете ли вы к срокам по долгам и целям.',act:{label:'Из чего складывается',act:'need-why'}});
-    else if(!C.ok||C.late.length) out.push({tone:'bad',title:'Сроки не сходятся с доходом',text:`На планы по срокам нужно около ${fmt(C.ask)} в месяц, а после жизни, минимальных платежей и наград остаётся ${fmt(C.free)}.`+(C.late.length?` Не успеть: ${C.late.slice(0,3).map(x=>`«${x.f.name}» к ${dateLabel(x.f.deadline)}${x.eta?` (реально ${monthIn(x.eta)})`:''}`).join(', ')}.`:'')+' Сдвиньте сроки или уберите их.',act:{label:'Посмотреть',act:'need-why'}});
+    else if(!C.ok||C.late.length) out.push({tone:'bad',title:'Сроки не сходятся с доходом',text:`Из всего дохода ${fmt(C.inc)} после налога, жизни, минимальных платежей и наград на планы остаётся ${fmt(C.free)} в месяц, а сроки просят ${fmt(C.ask)}.`+(C.late.length?` Не успеть: ${C.late.slice(0,3).map(x=>`«${x.f.name}» к ${dateLabel(x.f.deadline)}${x.eta?` (реально ${monthIn(x.eta)})`:''}`).join(', ')}.`:'')+' Сдвиньте сроки или уберите их.',act:{label:'Посмотреть',act:'need-why'}});
   }
   for(const d of P.dl){
     if(d.left<=0){out.push({tone:'good',title:`«${d.f.name}»: ${d.f.kind==='debt'?'долг закрыт':'цель достигнута'}`,text:'Фонд больше ничего не забирает из доходов.'});continue}
@@ -747,8 +747,10 @@ function openNeedWhy(){
   ${sec('2. Минимальные платежи по долгам',mins,r=>r.base,()=>'минимальный платёж')}
   ${sec('3. Планы: сроки и взносы в цели',plan,r=>r.f.kind==='debt'?r.extra:r.total,planSub)}
   ${!rows.length?'<p class="note">На этот месяц всё закрыто.</p>':''}
-  <div class="list chg">${line('Жизнь и минимальные платежи',fmt(P.coreNet))}${P.pct>0?line(`Налог и процентные фонды (${nf.format(P.pct)}%)`,'+'+fmt(P.coreGross-P.coreNet)):''}${line('Нужно заработать',fmt(P.coreGross),true)}${P.planNet>0.5?line('И ещё на планы',fmt(P.planGross)):''}</div>
-  ${P.planNet>0.5?(C.known?`<div class="tip ${C.ok&&!C.late.length?'good':'bad'}"><span class="dot"></span><div><b>${C.ok&&!C.late.length?'Планы реальны при вашем доходе':'Планы не сходятся с доходом'}</b><span class="muted small">При обычном доходе ${fmt(C.inc)} после жизни, минимальных платежей и наград на планы остаётся около ${fmt(C.free)} в месяц, а по срокам нужно ${fmt(C.ask)}.${C.ok&&!C.late.length?'':' Откройте фонд и сдвиньте или уберите срок: без срока долг гасится свободными деньгами по очереди, а цель копится, когда остаются деньги.'}</span></div></div>`:'<p class="note">Укажите обычный доход семьи в меню → Семья, чтобы проверить, реальны ли сроки.</p>'):''}`);
+  <div class="list chg">${line('Жизнь и минимальные платежи',fmt(P.coreNet))}${P.pct>0?line(`Налог и процентные фонды (${nf.format(P.pct)}%)`,'+'+fmt(P.coreGross-P.coreNet)):''}${line('Нужно заработать',fmt(P.coreGross),true)}${P.planNet>0.5?line(P.pct>0?`И ещё на планы <span class="note">(с налогом ${fmt(P.planGross)})</span>`:'И ещё на планы',fmt(P.planNet)):''}</div>
+  ${P.planNet>0.5?(C.known?`<div class="eyebrow">Хватит ли дохода на планы</div>
+  <div class="list chg">${line('Весь доход семьи в месяц',fmt(C.inc))}${C.taxAmt>0.5?line(`Налог и процентные фонды (${nf.format(P.pct)}%)`,'−'+fmt(C.taxAmt)):''}${line('Жизнь: платежи в месяц','−'+fmt(C.life))}${C.mins>0.5?line('Минимальные платежи по долгам','−'+fmt(C.mins)):''}${C.rew>0.5?line(`Награды (${nf.format(C.rp)}% от остатка)`,'−'+fmt(C.rew)):''}${line('Остаётся на планы',fmt(C.free),true)}${line('Планы по срокам просят',fmt(C.ask),true)}</div>
+  <div class="tip ${C.ok&&!C.late.length?'good':'bad'}"><span class="dot"></span><div><b>${C.ok&&!C.late.length?'Планы реальны при вашем доходе':`Не хватает ${fmt(Math.max(0,C.ask-C.free))} в месяц`}</b><span class="muted small">${C.ok&&!C.late.length?'Все сроки успеваются.':'Сроки не сходятся с доходом. Откройте фонд и сдвиньте или уберите срок: без срока долг гасится свободными деньгами по очереди, а цель копится, когда остаются деньги.'}</span></div></div>`:'<p class="note">Укажите обычный доход семьи в меню → Семья, чтобы проверить, реальны ли сроки.</p>'):''}`);
 }
 function effectRows(rows){
   return `<div class="list chg">${rows.map(r=>{const neg=!r.debt&&r.after<-0.5;
@@ -1016,7 +1018,7 @@ function openFund(f,kindPreset){
       const list=activeFunds().filter(x=>x.id!==tmp.id), at=activeFunds().findIndex(x=>x.id===tmp.id); list.splice(at<0?list.length:at,0,tmp);
       const {get}=stats(); const k=etaSim(list,inc,x=>x.id===tmp.id?left:leftOf(x,get))[tmp.id], ml=monthsLeft(dl), what=ff.kind==='debt'?'долг закроется':'накопится';
       if(k==null){el.innerHTML='<span class="neg">При вашем доходе это не закрывается:</span> после жизни и минимальных платежей свободных денег не остаётся.';return}
-      el.innerHTML=k>ml?`<span class="neg">К ${esc(dateLabel(dl))} не успеть.</span> При обычном доходе ${what} примерно ${monthIn(k)}. Срок сделает этот план обязательным на каждый месяц, поставьте реальный или уберите его.`:`Успеваете: при обычном доходе ${what} примерно ${monthIn(k)}.`;
+      el.innerHTML=k>ml?`<span class="neg">К ${esc(dateLabel(dl))} не успеть.</span> При вашем доходе ${what} примерно ${monthIn(k)}. Срок сделает этот план обязательным на каждый месяц, поставьте реальный или уберите его.`:`Успеваете: при вашем доходе ${what} примерно ${monthIn(k)}.`;
     };
     ['#fDl','#fTgt','#fCur','#fAmt','#fPct','#fRate'].forEach(s=>$(s).addEventListener('input',dlNote));
     $('#fRule')?.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;rule=b.dataset.k;sync()});

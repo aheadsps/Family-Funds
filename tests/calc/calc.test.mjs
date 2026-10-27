@@ -332,3 +332,15 @@ test('бюджет на долги считается из дохода, а не
   S.household = { expectedIncome: 150000 };
   assert.equal(debtBudget().v, 80000, '150 000 − 70 000 жизнь = 80 000 на долги, хотя срок просит 250 000+');
 });
+
+test('проверка планов: расчёт от всего дохода по шагам (300 000 − налог − жизнь − минимальные − награды)', () => {
+  setup([{ id: 'tax', name: 'Налог', kind: 'percent', value: 6, taxOnly: true }, { id: 'rent', name: 'Квартира', kind: 'monthly', value: 40000 }, food,
+    { id: 'cc', name: 'Кредитка', kind: 'debt', value: 200000, minPay: 10000, deadline: mmK(2) },
+    { id: 'rw', name: 'Награды', kind: 'reward', value: 10 }, rest]);
+  S.household = { expectedIncome: 300000 };
+  const c = planCheck(monthPicture());
+  assert.equal(c.inc, 300000); assert.equal(c.taxAmt, 18000); assert.equal(c.life, 70000); assert.equal(c.mins, 10000);
+  assert.equal(Math.round(c.rew), 20200, '10% от 202 000');
+  assert.equal(Math.round(c.free), 181800);
+  assert.equal(Math.round(c.inc - c.taxAmt - c.life - c.mins - c.rew), Math.round(c.free), 'строки сходятся с итогом');
+});
