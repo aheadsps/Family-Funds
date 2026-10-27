@@ -12,8 +12,9 @@ const debts = block(/^function orderDebts/, /^function debtSummary/);
 const eta = block(/^function etaSim/, /^function wzMetrics/);
 const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\nreturn {S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome};')(() => '');
-const { S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome } = A;
+const pend = block(/^function debtPending/, /^function fundAcc/);
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\nreturn {debtPending,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome};')(() => '');
+const { debtPending, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -232,4 +233,27 @@ test('изменение суммы дохода: деньги сходятся 
     assert.equal(sumA(na), amt, JSON.stringify({ fs_, amt }));
     assert.ok(Object.values(na).every(v => v > 0));
   }
+});
+
+test('«Уже оплачено»: просроченный платёж уходит из ближайших, фонды и деньги не меняются', () => {
+  const car = { id: 'car', name: 'Кредит жены', kind: 'monthly', value: 15000, payDay: 1 };
+  setup([car, rest]);
+  const L0 = upcoming(7);
+  assert.ok(L0.some(x => x.f.id === 'car'), 'платёж виден');
+  S.tx.push({ id: 'pm', type: 'paidmark', fundId: 'car', amount: 15000, date: m + '-27', month: m, createdAt: 5 });
+  assert.ok(upcoming(7).every(x => !(x.f.id === 'car' && x.overdue)), 'просроченного платежа больше нет');
+  assert.equal(monthPicture().stillNet, 0, 'обязательство месяца по оплаченному платежу закрыто');
+  assert.equal(fstate(S.funds[0], stats().get).balance, 0, 'баланс фонда не изменился, в минус не ушёл');
+  // следующий доход не отдаёт деньги фонду, который уже оплачен
+  assert.equal(distribute(50000, true).rows.find(r => r.f.id === 'car').give, 0);
+});
+
+test('«Уже оплачено» для долга: ожидание платежа в «Ресурсах» закрывается', () => {
+  const debt = { id: 'd', name: 'Кредит', kind: 'debt', value: 100000, minPay: 10000, payDay: 1 };
+  setup([debt, rest]); S.household = { accSince: 1 };
+  S.tx.push({ id: 'i', type: 'income', amount: 50000, alloc: { d: 10000, rest: 40000 }, date: m + '-02', month: m, createdAt: 2 });
+  assert.equal(debtPending().d, 10000);
+  S.tx.push({ id: 'pm', type: 'paidmark', fundId: 'd', amount: 10000, date: m + '-27', month: m, createdAt: 5 });
+  assert.equal(debtPending().d, undefined);
+  assert.ok(upcoming(7).every(x => !(x.f.id === 'd' && x.overdue)));
 });
