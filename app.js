@@ -134,6 +134,15 @@ function monthReq(f,get){
   }
   return 0;
 }
+// Из чего состоит обязательное на этот месяц по фонду: сам платёж (платёж в месяц, минимальный платёж, лимит цели)
+// и добавка ради срока (остаток долга или цели, поделённый на месяцы до срока)
+function reqParts(f,get){
+  const s=fstate(f,get), total=monthReq(f,get); let base=total, d=null;
+  if(f.kind==='debt'){base=Math.max(0,Math.min(+f.minPay||0,s.remaining)-s.allocM);d=livePlan(f,s)}
+  else if(f.kind==='goal'){d=livePlan(f,s); if(d) base=0}
+  base=Math.min(base,total);
+  return {total,base,extra:total-base,d};
+}
 // Сколько обязательного в обычном месяце (для плана и прогнозов)
 function monthPlanned(f,get){
   const s=fstate(f,get);
@@ -246,10 +255,11 @@ function monthPicture(){
   const needDebt=sum(funds.filter(f=>f.kind==='debt').map(f=>monthReq(f,get)));
   const stillNet=sum(funds.map(f=>monthReq(f,get)));
   const stillGross=pct<100?stillNet/(1-pct/100):stillNet;
+  const extraNet=sum(funds.map(f=>reqParts(f,get).extra)), extraGross=pct<100?extraNet/(1-pct/100):extraNet;
   const free=fstate({id:'_free',kind:'goal',value:0},get).balance;
   const planned=sum(funds.map(f=>monthPlanned(f,get)));
   const progress=planned>0?Math.max(0,Math.min(1,(planned-stillNet)/planned)):null;
-  return {get,funds,mi,incomeM,spentM,needMonthly,needDebt,totalMonthly,pct,dl,stillNet,stillGross,free,planned,progress};
+  return {get,funds,mi,incomeM,spentM,needMonthly,needDebt,totalMonthly,pct,dl,stillNet,stillGross,extraNet,extraGross,free,planned,progress};
 }
 function tips(P){
   const out=[]; const {get,funds,mi}=P;
@@ -466,7 +476,7 @@ function renderNow(){
   let h=`<section class="hero"><div class="hero-main">${P.progress!==null?ringSvg(done?1:P.progress,done):''}<div>`;
   if(!done){
     h+=`<div class="eyebrow">Ещё нужно заработать в ${PREP[mi]}</div><div class="fig" data-count="${Math.round(P.stillGross)}">${fmt(P.stillGross)}</div>
-    <div class="note">${P.progress!==null?`План ${GEN[mi]} закрыт на ${Math.round(P.progress*100)}%. `:''}Эта сумма закроет платежи${P.dl.length?' и план по срокам':''}${P.pct?`, с учётом ${nf.format(P.pct)}% в процентные фонды`:''}.</div>`;
+    <div class="note">${P.progress!==null?`План ${GEN[mi]} закрыт на ${Math.round(P.progress*100)}%. `:''}Эта сумма закроет платежи${P.dl.length?' и план по срокам':''}${P.pct?`, с учётом ${nf.format(P.pct)}% в процентные фонды`:''}.${P.extraGross>0.5?` Из них <b>${fmt(P.extraGross)}</b> нужно, чтобы успеть к срокам по долгам и целям.`:''} <button class="link" data-act="need-why">Из чего складывается</button></div>`;
   } else {
     h+=`<div class="eyebrow">${NOM[mi]}</div><div class="fig ok">План месяца выполнен</div><div class="note">Дальше доход пойдёт на награды, долги и цели по очереди фондов, остаток в накопления.</div>`;
   }
@@ -669,6 +679,23 @@ function splitLine(d){
   const G=groupSplit(d.rows,d.free);
   if(!G.length) return '';
   return `<div class="split">${G.map(g=>`<div class="sp-row"><span>${esc(g.t)}${g.n.length&&g.id!=='tax'?`<small>${esc(g.n.slice(0,3).join(', '))}${g.n.length>3?'…':''}</small>`:''}</span><b>${fmt(g.v)}</b></div>`).join('')}</div>`;
+}
+function openNeedWhy(){
+  const P=monthPicture(), {get}=P; const mi=P.mi;
+  const rows=P.funds.map(f=>({f,...reqParts(f,get)})).filter(r=>r.total>0.5);
+  const pay=rows.filter(r=>r.base>0.5), dl=rows.filter(r=>r.extra>0.5);
+  const row=(r,amt,sub)=>`<button class="frow" data-act="edit-fund" data-id="${esc(r.f.id)}" ${S.canWrite?'':'disabled'}>${fundIcon(r.f,'sm')}<span class="fb"><span class="row-main"><span class="name">${esc(r.f.name)}</span><span class="amt">${fmt(amt)}</span></span><span class="note">${sub}</span></span></button>`;
+  const paySub=r=>r.f.kind==='monthly'?`платёж в месяц, в фонде не хватает до нормы`:r.f.kind==='debt'?'минимальный платёж по долгу':'взнос в цель в месяц';
+  const dlSub=r=>{const d=r.d;return d?`срок до ${esc(dateLabel(r.f.deadline))}: осталось ${fmt(d.left)}, ${d.ml} ${plural(d.ml,'месяц','месяца','месяцев')}${d.interest?' с учётом процентов':''}`:''};
+  openSheet(`${sheetHead(`Ещё нужно заработать в ${PREP[mi]}`)}
+  <p class="note">Столько нужно получить дохода, чтобы закрыть все обязательные платежи и успеть к срокам. Задвоения нет: каждый фонд посчитан один раз.</p>
+  ${pay.length?`<div class="eyebrow">Обязательные платежи</div><div class="list river">${pay.map(r=>row(r,r.base,paySub(r))).join('')}</div>`:''}
+  ${dl.length?`<div class="eyebrow">Чтобы успеть к срокам</div><div class="list river">${dl.map(r=>row(r,r.extra,dlSub(r))).join('')}</div>
+    <p class="note">Срок у долга или цели добавляет в этот месяц равную долю остатка. Если срок поставили не всерьёз или он слишком близкий, откройте фонд и уберите или сдвиньте срок: сумма сразу пересчитается.</p>`:''}
+  ${!rows.length?'<p class="note">На этот месяц всё закрыто.</p>':''}
+  <div class="list chg"><div class="chg-row" style="grid-template-columns:minmax(0,1fr) auto"><span>Обязательное на месяц</span><b>${fmt(P.stillNet)}</b></div>
+  ${P.pct>0?`<div class="chg-row" style="grid-template-columns:minmax(0,1fr) auto"><span>Налог и процентные фонды (${nf.format(P.pct)}%)</span><b>+${fmt(P.stillGross-P.stillNet)}</b></div>`:''}
+  <div class="chg-row" style="grid-template-columns:minmax(0,1fr) auto"><span><b>Нужно заработать</b></span><b>${fmt(P.stillGross)}</b></div></div>`);
 }
 function effectRows(rows){
   return `<div class="list chg">${rows.map(r=>{const neg=!r.debt&&r.after<-0.5;
@@ -1356,6 +1383,7 @@ document.addEventListener('click',async e=>{
   else if(act==='mv-all'){if(S.canWrite&&S.moves){a.disabled=true;try{for(const m of S.moves)await recordMove(m);closeSheet();toast('Всё отмечено, остатки на картах обновлены')}catch(e){toast('Не получилось сохранить.');a.disabled=false}}}
   else if(act==='go-funds'){S.tab='funds';S.enterNext=true;render();window.scrollTo(0,0)}
   else if(act==='pay-lump'){const f=fundById(a.dataset.id);if(f&&S.canWrite)openExpense(null,{fundId:f.id,amount:Math.round(fstate(f,stats().get).balance),note:'Платёж по долгу'})}
+  else if(act==='need-why'){openNeedWhy()}
   else if(act==='paid-mark'){const f=fundById(a.dataset.id);if(f&&S.canWrite){const date=today();
     const id=await DB.add('tx',{type:'paidmark',fundId:f.id,amount:+a.dataset.amt||0,date,month:curMonth(),note:'',by:S.uid||null,createdAt:Date.now()});
     toast(`«${f.name}» отмечен оплаченным`,{label:'Вернуть',fn:async()=>{try{await DB.del('tx',id);toast('Отметка снята')}catch(e){toast('Не получилось снять отметку.')}}})}}
