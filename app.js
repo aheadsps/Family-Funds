@@ -909,7 +909,7 @@ function openFund(f,kindPreset){
       $('#fDebtBox').hidden=!plainDebt;
       $('#fDayBox').hidden=isReward||!((rule==='monthly'&&!accum)||plainDebt);
       $('#fDlBox').hidden=isReward||!(accum||debt);
-      $('#fAccBox').hidden=plainDebt;
+      $('#fAccBox').hidden=false;
       $('#fCurBox').hidden=isReward;
       const cb=$('#fCloseBox'); if(cb) cb.hidden=!accum;
       $('#fCurLbl').textContent=plainDebt?'Сколько осталось погасить, ₽':accum?(debt?'Сколько уже отложено на долг, ₽':'Сколько уже накоплено, ₽'):'Сколько сейчас лежит в фонде, ₽';
@@ -934,7 +934,7 @@ function openFund(f,kindPreset){
       if($('#fDay').value.trim()&&(day<1||day>31)) return err('День платежа — число от 1 до 31.');
       const rate=parseAmt($('#fRate').value);
       if(kind==='debt'&&(rate<0||rate>200)) return err('Ставка выглядит странно: укажите процент годовых, например 29,9.');
-      const data={accountId:kind!=='debt'&&$('#fAcc')?$('#fAcc').value:(f.accountId||''),name,icon,
+      const data={accountId:$('#fAcc')?$('#fAcc').value:(f.accountId||''),name,icon,
         ...fundFields({rule,debt,accum,reward:isReward},{amt,pct,tgt,day,rate,rateSet:$('#fRate').value.trim()!=='',tax:$('#fTax').checked,dl:$('#fDl').value})};
       const moved=isNew?0:(s.moved||0); const paid=isNew?0:(s.paid||0);
       if(kind==='debt'){data.value=Math.round(curIn+paid);data.start=0}
@@ -1423,20 +1423,25 @@ function reconcile(){
   const L=accounts(); if(!L.length) return null;
   const {get}=stats(); const act=accBalances(); const exp={}, byAcc={}; L.forEach(a=>{exp[a.id]=0;byAcc[a.id]=[]});
   let loose=0; const looseFunds=[];
+  const pend=debtPending(), onAcc={};   // onAcc: долги с картой, деньги на платёж лежат на этой карте до «Внёс»
   for(const f of activeFunds()){
-    if(f.kind==='debt') continue; const b=Math.max(0,Math.round(fstate(f,get).balance)); const id=fundAcc(f);
+    const id=fundAcc(f);
+    if(f.kind==='debt'){const p=Math.round(pend[f.id]||0); if(id){onAcc[f.id]=id;exp[id]+=p;byAcc[id].push({f,b:p,debt:true})} continue}
+    const b=Math.max(0,Math.round(fstate(f,get).balance));
     if(id){exp[id]+=b;byAcc[id].push({f,b})} else {loose+=b;looseFunds.push(f)}
   }
   const free=Math.max(0,Math.round(fstate({id:'_free',kind:'goal',value:0},get).balance));
-  const pend=debtPending(); const pendSum=Math.round(sum(Object.values(pend)));
+  const pendSum=Math.round(sum(Object.entries(pend).filter(([fid])=>!onAcc[fid]).map(([,x])=>x)));
   const total=Math.round(sum(L.map(a=>act[a.id])));
   const inFunds=Math.round(sum(Object.values(exp))+loose+free);
   const disc=total-inFunds-pendSum;          // >0: деньги не разложены по фондам, <0: на счетах меньше, чем в фондах
   // какие переводы нужны: с карт, где лишнее, на карты, где не хватает, и в погашение долгов
   const srcs=L.map(a=>({a,x:Math.round(act[a.id]-exp[a.id])})).filter(s=>s.x>0).sort((p,q)=>q.x-p.x);
   const needs=[...L.map(a=>({a,x:Math.round(exp[a.id]-act[a.id])})).filter(n=>n.x>0).sort((p,q)=>q.x-p.x),
-    ...Object.entries(pend).map(([fid,x])=>({debt:fundById(fid),x:Math.round(x)})).filter(n=>n.debt)];
+    ...Object.entries(pend).filter(([fid])=>!onAcc[fid]).map(([fid,x])=>({debt:fundById(fid),x:Math.round(x)})).filter(n=>n.debt)];
   const moves=[];
+  // долг с картой: платёж вносится прямо с неё
+  for(const [fid,id] of Object.entries(onAcc)){const x=Math.round(pend[fid]||0), a=L.find(z=>z.id===id); if(a&&x>=MOVE_MIN) moves.push({from:a,to:null,debt:fundById(fid),amount:x,funds:[]})}
   // наличные отдаём в последнюю очередь: снять с карты проще, чем внести наличку на счёт
   for(const n of needs){ const order=srcs.slice().sort((p,q)=>((p.a.kind==='cash')-(q.a.kind==='cash'))||q.x-p.x);
     for(const s of order){ if(n.x<MOVE_MIN) break; if(s.x<1) continue;
@@ -1521,15 +1526,16 @@ function renderRes(){
     const act=Math.round(R.act[a.id]), exp=Math.round(R.exp[a.id]), d=act-exp, fs=R.byAcc[a.id];
     return `<button class="row acc" data-act="edit-acc" data-id="${esc(a.id)}" ${S.canWrite?'':'disabled'}><span class="row-main"><span class="name">${accEmoji(a)} ${esc(a.name)}</span><span class="amt">${fmt(act)}</span></span>
       <span class="note">${fs.length?`по фондам ${fmt(exp)}`+(Math.abs(d)>=1?` · <span class="${d<0?'neg':''}">${d>0?'лишние':'не хватает'} ${fmt(Math.abs(d))}</span>`:' · сходится'):'фондов здесь нет'}</span>
-      ${fs.length?`<span class="acc-funds">${fs.map(x=>`<span class="chip">${esc(fundEmoji(x.f))} ${esc(x.f.name)} ${fmt(x.b)}</span>`).join('')}</span>`:''}</button>`}).join('')}</div>
+      ${fs.length?`<span class="acc-funds">${fs.map(x=>`<span class="chip">${esc(fundEmoji(x.f))} ${esc(x.f.name)} ${x.debt?`к внесению ${fmt(x.b)}`:fmt(x.b)}</span>`).join('')}</span>`:''}</button>`}).join('')}</div>
     ${S.canWrite?`<button class="btn ghost" data-act="new-acc">${ic('plus')}Добавить карту или наличные</button>`:''}</section>`;
-  const loose=activeFunds().filter(f=>f.kind!=='debt'&&!fundAcc(f));
-  if(loose.length) h+=`<section class="block"><h2>Где хранятся фонды</h2><p class="note">Укажите карту для каждого фонда. Тогда приложение будет подсказывать, сколько и куда переложить.</p><div class="list">${loose.map(f=>`<div class="row place">${fundIcon(f,'sm')}<span class="name">${esc(f.name)}</span><select data-place="${esc(f.id)}" aria-label="Где хранится «${esc(f.name)}»" ${S.canWrite?'':'disabled'}><option value="">Не указано</option>${L.map(a=>`<option value="${esc(a.id)}">${accEmoji(a)} ${esc(a.name)}</option>`).join('')}</select></div>`).join('')}</div></section>`;
+  const all=activeFunds(), none=all.filter(f=>!fundAcc(f)).length;
+  if(all.length) h+=`<section class="block"><h2>Где хранятся фонды</h2><p class="note">${none?`Карта не указана у ${none} ${plural(none,'фонда','фондов','фондов')}. `:''}Укажите, где лежат деньги каждого фонда, в том числе отложенные на долги. Тогда приложение будет подсказывать, сколько и куда переложить.</p><div class="list">${all.map(f=>{const cur=fundAcc(f);
+    return `<div class="row place">${fundIcon(f,'sm')}<span class="name">${esc(f.name)}${f.kind==='debt'?'<span class="note">деньги на платёж до «Внёс»</span>':''}</span><select data-place="${esc(f.id)}" aria-label="Где хранится «${esc(f.name)}»" ${S.canWrite?'':'disabled'}><option value="" ${cur?'':'selected'}>Не указано</option>${L.map(a=>`<option value="${esc(a.id)}" ${a.id===cur?'selected':''}>${accEmoji(a)} ${esc(a.name)}</option>`).join('')}</select></div>`}).join('')}</div></section>`;
   return h;
 }
 document.addEventListener('change',e=>{
-  const s=e.target.closest&&e.target.closest('[data-place]'); if(!s||!s.value) return;
-  const f=fundById(s.dataset.place); if(!f) return; f.accountId=s.value; DB.update('funds',f.id,{accountId:s.value}); toast(`«${f.name}» хранится на «${accName(s.value)}»`); renderSoon();
+  const s=e.target.closest&&e.target.closest('[data-place]'); if(!s) return;
+  const f=fundById(s.dataset.place); if(!f) return; f.accountId=s.value; DB.update('funds',f.id,{accountId:s.value}); toast(s.value?`«${f.name}» хранится на «${accName(s.value)}»`:`У «${f.name}» карта не указана`); renderSoon();
 });
 
 /* ---------- пошаговая настройка ----------
