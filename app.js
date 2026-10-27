@@ -634,7 +634,7 @@ let sheetT;
 function openSheet(html,onMount){
   clearTimeout(sheetT); $('#scrim').classList.remove('closing');
   const sh=$('#sheet'); sh.classList.remove('closing'); sh.innerHTML=`<div class="wrap">${html}</div>`; sh.hidden=false; $('#scrim').hidden=false; sh.scrollTop=0;
-  onMount&&onMount(sh); const f=sh.querySelector('input.big,input'); f&&!f.dataset.nofocus&&setTimeout(()=>f.focus(),60);
+  onMount&&onMount(sh); const f=sh.querySelector('input.big,input'); f&&!f.dataset.nofocus&&setTimeout(()=>{if(!sh.contains(document.activeElement)||document.activeElement===document.body)f.focus()},60);   // не отбираем фокус, если вы уже начали вводить в другое поле
 }
 /* Шторка над клавиатурой iPhone: держим её в видимой области и не даём полю ввода уехать за край */
 function fitSheet(){
