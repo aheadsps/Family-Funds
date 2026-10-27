@@ -13,8 +13,8 @@ const eta = block(/^function etaSim/, /^function wzMetrics/);
 const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
 const pend = block(/^function debtPending/, /^function fundAcc/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\nreturn {debtPending,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome};')(() => '');
-const { debtPending, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome } = A;
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\nreturn {debtPending,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts};')(() => '');
+const { debtPending, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -256,4 +256,19 @@ test('«Уже оплачено» для долга: ожидание плате
   S.tx.push({ id: 'pm', type: 'paidmark', fundId: 'd', amount: 10000, date: m + '-27', month: m, createdAt: 5 });
   assert.equal(debtPending().d, undefined);
   assert.ok(upcoming(7).every(x => !(x.f.id === 'd' && x.overdue)));
+});
+
+test('«Нужно заработать»: платёж и добавка ради срока разделены, задвоения нет', () => {
+  const mm = k => { const x = new Date(new Date().getFullYear(), new Date().getMonth() + k, 1); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'); };
+  setup([
+    { id: 'rent', name: 'Ипотека', kind: 'monthly', value: 40000 },
+    { id: 'car', name: 'Кредит за машину', kind: 'debt', value: 500000, minPay: 20000, rate: 15, deadline: mm(1) },
+    { id: 'lump', name: 'Рассрочка', kind: 'goal', isDebt: true, value: 300000, deadline: mm(0) }, rest]);
+  const P = monthPicture(); const parts = S.funds.map(f => reqParts(f, P.get));
+  parts.forEach(p => { assert.ok(Math.abs(p.base + p.extra - p.total) < 1e-6 && p.extra >= -1e-6); });
+  assert.equal(Math.round(parts.reduce((x, p) => x + p.total, 0)), Math.round(P.stillNet), 'разбивка даёт ту же сумму');
+  assert.equal(parts[0].extra, 0); assert.equal(parts[0].base, 40000);
+  assert.equal(parts[1].base, 20000); assert.ok(parts[1].extra > 200000);
+  assert.equal(parts[2].base, 0); assert.equal(parts[2].extra, 300000);
+  assert.ok(Math.abs(P.extraNet - (parts[1].extra + parts[2].extra)) < 1e-6);
 });
