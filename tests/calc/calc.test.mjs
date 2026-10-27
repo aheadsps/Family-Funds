@@ -8,13 +8,14 @@ const L = fs.readFileSync(new URL('../../app.js', import.meta.url), 'utf8').spli
 const idx = re => { const i = L.findIndex(l => re.test(l)); assert.ok(i >= 0, 'не найдено: ' + re); return i; };
 const block = (from, to) => L.slice(idx(from), idx(to)).join('\n');
 const core = L.slice(3, idx(/^\/\* -+ render -+ \*\//)).join('\n');
-const debts = block(/^function orderDebts/, /^function debtSummary/);
+const debts = block(/^const stratOf/, /^function debtSummary/);
 const eta = block(/^function etaSim/, /^function wzMetrics/);
 const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
 const pend = block(/^function debtPending/, /^function fundAcc/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\nreturn {debtPending,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts};')(() => '');
-const { debtPending, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts } = A;
+const order = block(/^const FTIERS=/, /^function renderFunds/) + '\n' + block(/^function reorderGroup/, /^async function moveFund/);
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {reorderGroup,fundTier,debtPending,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
+const { reorderGroup, fundTier, debtPending, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -271,4 +272,63 @@ test('«Нужно заработать»: платёж и добавка рад
   assert.equal(parts[1].base, 20000); assert.ok(parts[1].extra > 200000);
   assert.equal(parts[2].base, 0); assert.equal(parts[2].extra, 300000);
   assert.ok(Math.abs(P.extraNet - (parts[1].extra + parts[2].extra)) < 1e-6);
+});
+
+const mmK = k => { const x = new Date(new Date().getFullYear(), new Date().getMonth() + k, 1); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-28'; };
+
+test('уровни: дохода мало, сначала жизнь целиком, потом минимальные платежи, планы по срокам последними', () => {
+  setup([
+    { id: 'rent', name: 'Квартира', kind: 'monthly', value: 40000 }, food,
+    { id: 'cc', name: 'Кредитка', kind: 'debt', value: 200000, minPay: 10000, deadline: mmK(2) },
+    { id: 'pad', name: 'Подушка', kind: 'goal', value: 600000, deadline: mmK(4) }, rest]);
+  let d = distribute(60000, true);
+  assert.equal(give(d, 'rent') + give(d, 'food'), 60000, 'всё ушло на жизнь'); assert.equal(give(d, 'rent'), 34286, 'жизнь делит нехватку пропорционально между собой');
+  assert.equal(give(d, 'cc'), 0); assert.equal(give(d, 'pad'), 0, 'планы ничего не забирают у жизни');
+  d = distribute(75000, true);
+  assert.equal(give(d, 'rent'), 40000); assert.equal(give(d, 'food'), 30000);
+  assert.equal(give(d, 'cc'), 5000, 'на минимальный платёж то, что осталось после жизни');
+  assert.equal(give(d, 'pad'), 0);
+  d = distribute(90000, true);
+  assert.equal(give(d, 'cc') >= 10000, true); assert.ok(give(d, 'pad') > 0, 'планы получают после жизни и минимальных платежей');
+  assert.equal(total(d), 90000);
+});
+
+test('главная: «нужно заработать» = жизнь и минимальные платежи, планы отдельно', () => {
+  setup([{ id: 'rent', name: 'Квартира', kind: 'monthly', value: 40000 },
+    { id: 'cc', name: 'Кредитка', kind: 'debt', value: 200000, minPay: 10000, deadline: mmK(1) },
+    { id: 'pad', name: 'Подушка', kind: 'goal', value: 600000, deadline: mmK(4) }, rest]);
+  const P = monthPicture();
+  assert.equal(P.coreNet, 50000);
+  assert.ok(Math.abs(P.coreNet + P.planNet - P.stillNet) < 1);
+  assert.ok(P.planNet > 200000);
+});
+
+test('реальность сроков: план больше свободных денег, просроченные по доходу фонды названы', () => {
+  setup([{ id: 'rent', name: 'Квартира', kind: 'monthly', value: 40000 }, food,
+    { id: 'cc', name: 'Кредитка', kind: 'debt', value: 200000, minPay: 10000, deadline: mmK(2) },
+    { id: 'pad', name: 'Подушка', kind: 'goal', value: 600000, deadline: mmK(5) }, rest]);
+  S.household = { expectedIncome: 150000 };
+  const c = planCheck(monthPicture());
+  assert.equal(c.known, true);
+  assert.equal(Math.round(c.free), 70000, '150 000 − 70 000 жизнь − 10 000 минимальный платёж');
+  assert.ok(c.ask > c.free); assert.equal(c.ok, false);
+  assert.ok(c.late.some(x => x.f.id === 'pad'), 'подушка к сроку не успевает');
+  S.household = { expectedIncome: 400000 };
+  const c2 = planCheck(monthPicture());
+  assert.equal(c2.ok, true); assert.equal(c2.late.length, 0, 'при большом доходе всё успевается');
+});
+
+test('перестановка в очереди долгов и целей не трогает остальные фонды и ничего не теряет', () => {
+  setup([food, { id: 'a', name: 'A', kind: 'debt', value: 1 }, { id: 'tax', name: 'Налог', kind: 'percent', value: 6 },
+    { id: 'b', name: 'B', kind: 'goal', value: 1 }, { id: 'c', name: 'C', kind: 'debt', value: 1 }, rest]);
+  const out = reorderGroup(['c', 'a', 'b']).map(f => f.id);
+  assert.deepEqual(out, ['food', 'c', 'tax', 'a', 'b', 'rest']);
+  assert.equal(fundTier(S.funds[0]), 'life'); assert.equal(fundTier(S.funds[3]), 'queue');
+});
+
+test('бюджет на долги считается из дохода, а не из сроков', () => {
+  setup([{ id: 'rent', name: 'Квартира', kind: 'monthly', value: 40000 }, food,
+    { id: 'car', name: 'Кредит', kind: 'debt', value: 500000, minPay: 20000, rate: 15, deadline: mmK(1) }, rest]);
+  S.household = { expectedIncome: 150000 };
+  assert.equal(debtBudget().v, 80000, '150 000 − 70 000 жизнь = 80 000 на долги, хотя срок просит 250 000+');
 });

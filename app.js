@@ -14,8 +14,8 @@ const KIND_HINT = {
   monthly:'Каждый месяц фонд набирает свою сумму. Если доход пришёл частями, каждая часть делится между такими фондами пропорционально. Остаток переходит на следующий месяц, перерасход закроет следующий доход.',
   percent:'С каждого поступления фонд сразу берёт свой процент, сколько бы ни пришло. Для налога и подушки безопасности.',
   rest:'Забирает всё, что осталось после остальных фондов. Ставьте его последним в очереди.',
-  goal:'Копит до нужной суммы из денег сверх обязательного. Если задать срок или лимит в месяц, часть взноса станет обязательной и будет делиться вместе с едой и платежами. Тратить из него можно когда угодно: потраченное не нужно докладывать заново. Когда задача выполнена, закройте цель, а остаток перенесите в другой фонд.',
-  debt:'Минимальный платёж идёт вместе с обязательным, досрочно долг гасится деньгами сверх него. Когда долг закрыт, фонд больше ничего не забирает, а вам положен бонус на награду.'
+  goal:'Копит до нужной суммы из денег сверх обязательного. Если задать срок или лимит в месяц, часть взноса станет планом на месяц: он получает деньги после жизни и минимальных платежей по долгам. Тратить из него можно когда угодно: потраченное не нужно докладывать заново. Когда задача выполнена, закройте цель, а остаток перенесите в другой фонд.',
+  debt:'Минимальный платёж идёт сразу после жизни (еда, жильё, связь), досрочно долг гасится деньгами сверх плана. Когда долг закрыт, фонд больше ничего не забирает, а вам положен бонус на награду.'
 };
 const PREP = ['январе','феврале','марте','апреле','мае','июне','июле','августе','сентябре','октябре','ноябре','декабре'];
 const NOM = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
@@ -165,14 +165,22 @@ function distribute(amount,taxable,o={}){
     if(f.kind!=='percent'){const s=fstate(f,get);g=Math.min(g,Math.max(0,Math.round(f.kind==='debt'?s.remaining:s.left)))}   // цель и долг берут процент, пока не накопят или не погасят
     give[f.id]+=g;rem-=g;
   }
-  const req=funds.map(f=>({f,r:Math.max(0,Math.round(monthReq(f,get))-give[f.id])})).filter(x=>x.r>0);   // минус то, что фонд уже взял процентом
-  const Q=sum(req.map(x=>x.r)); let mandatory=0;
-  if(Q>0){
-    if(rem<Q){
-      let left=rem; const parts=req.map(x=>{const exact=rem*x.r/Q;const g=Math.floor(exact);left-=g;return {f:x.f,g,fr:exact-g}});
-      parts.slice().sort((a,b)=>b.fr-a.fr).forEach(p=>{if(left>0){p.g++;left--}});
-      parts.forEach(p=>give[p.f.id]+=p.g); mandatory=rem; rem=0;
-    } else {req.forEach(x=>give[x.f.id]+=x.r);mandatory=Q;rem-=Q}
+  // Обязательное на месяц по уровням: 1) жизнь (платежи в месяц), 2) минимальные платежи по долгам, 3) планы (сроки, взносы в цели).
+  // Каждый уровень получает деньги только когда предыдущий закрыт полностью; внутри уровня нехватка делится пропорционально.
+  const tiers=[[],[],[]];
+  for(const f of funds){
+    const r=Math.max(0,Math.round(monthReq(f,get))-give[f.id]); if(!(r>0)) continue;   // минус то, что фонд уже взял процентом
+    if(f.kind==='monthly'){tiers[0].push({f,r});continue}
+    const b=f.kind==='debt'?Math.min(r,Math.round(reqParts(f,get).base)):0;
+    if(b>0) tiers[1].push({f,r:b}); if(r-b>0) tiers[2].push({f,r:r-b});
+  }
+  const Q=sum(tiers.flat().map(x=>x.r)); let mandatory=0;
+  for(const req of tiers){
+    const q=sum(req.map(x=>x.r)); if(!(q>0)) continue;
+    if(rem>=q){req.forEach(x=>give[x.f.id]+=x.r);mandatory+=q;rem-=q;continue}
+    let left=rem; const parts=req.map(x=>{const exact=rem*x.r/q;const g=Math.floor(exact);left-=g;return {f:x.f,g,fr:exact-g}});
+    parts.slice().sort((a,b)=>b.fr-a.fr).forEach(p=>{if(left>0){p.g++;left--}});
+    parts.forEach(p=>give[p.f.id]+=p.g); mandatory+=rem; rem=0; break;
   }
   const surplus=rem;
   if(rem>0) for(const f of funds) if(f.kind==='reward'){const g=Math.min(rem,Math.round(surplus*(+f.value||0)/100));give[f.id]+=g;rem-=g}
@@ -256,18 +264,45 @@ function monthPicture(){
   const stillNet=sum(funds.map(f=>monthReq(f,get)));
   const stillGross=pct<100?stillNet/(1-pct/100):stillNet;
   const extraNet=sum(funds.map(f=>reqParts(f,get).extra)), extraGross=pct<100?extraNet/(1-pct/100):extraNet;
+  // «ядро»: жизнь и минимальные платежи по долгам; планы: сроки и взносы в цели
+  const coreNet=sum(funds.map(f=>f.kind==='monthly'?monthReq(f,get):f.kind==='debt'?reqParts(f,get).base:0)), planNet=Math.max(0,stillNet-coreNet);
+  const gr=x=>pct<100?x/(1-pct/100):x, coreGross=gr(coreNet), planGross=gr(planNet);
+  const coreTotal=sum(funds.map(f=>{if(f.kind==='monthly')return +f.value||0;if(f.kind!=='debt')return 0;const s=fstate(f,get);return Math.min(+f.minPay||0,s.remaining+s.allocM)}));
+  const coreProgress=coreTotal>0?Math.max(0,Math.min(1,(coreTotal-coreNet)/coreTotal)):null;
   const free=fstate({id:'_free',kind:'goal',value:0},get).balance;
   const planned=sum(funds.map(f=>monthPlanned(f,get)));
   const progress=planned>0?Math.max(0,Math.min(1,(planned-stillNet)/planned)):null;
-  return {get,funds,mi,incomeM,spentM,needMonthly,needDebt,totalMonthly,pct,dl,stillNet,stillGross,extraNet,extraGross,free,planned,progress};
+  return {get,funds,mi,incomeM,spentM,needMonthly,needDebt,totalMonthly,pct,dl,stillNet,stillGross,extraNet,extraGross,coreNet,coreGross,planNet,planGross,coreProgress,free,planned,progress};
+}
+// Реально ли успеть к срокам при обычном доходе: сколько остаётся на планы после жизни, минимальных платежей и наград,
+// сколько планы просят в месяц, и когда каждый долг или цель со сроком закроется на самом деле (etaSim по очереди фондов)
+const leftOf=(f,get)=>{const s=fstate(f,get);return f.kind==='debt'?s.remaining:s.left};
+function planCheck(P){
+  const inc=usualIncome(); const {get,funds}=P;
+  const mins=sum(funds.filter(f=>f.kind==='debt').map(f=>Math.min(+f.minPay||0,leftOf(f,get))));
+  const rp=sum(funds.filter(f=>f.kind==='reward').map(f=>+f.value||0));
+  const free=Math.max(0,(inc*(1-P.pct/100)-P.totalMonthly-mins)*(1-rp/100));
+  const items=[]; let ask=0;
+  for(const f of funds){ if(f.kind!=='debt'&&f.kind!=='goal') continue;
+    const s=fstate(f,get), d=livePlan(f,s);
+    if(d){ask+=Math.max(0,d.perMonth-(f.kind==='debt'?Math.min(+f.minPay||0,d.left):0));items.push({f,d})}
+    else if(f.kind==='goal'&&+f.cap>0&&s.left>0.5) ask+=+f.cap;
+  }
+  const eta=inc>0?etaSim(funds,inc,x=>leftOf(x,get)):{};
+  items.forEach(it=>{const k=eta[it.f.id];it.eta=k==null?null:k;it.late=k==null||k>it.d.ml});
+  return {inc,known:inc>0,free,ask,items,late:items.filter(x=>x.late),ok:inc>0&&ask<=free+0.5};
 }
 function tips(P){
   const out=[]; const {get,funds,mi}=P;
   if(!funds.length) return out;
   if(P.planned>0){
-    if(P.stillNet>0.5){const n=funds.filter(f=>monthReq(f,get)>0.5);
-      out.push({tone:'warn',title:`На обязательное в ${PREP[mi]} не хватает ${fmt(P.stillNet)}`,text:`Это ${n.slice(0,3).map(f=>'«'+f.name+'»').join(', ')}${n.length>3?` и ещё ${n.length-3}`:''}. Следующий доход после налога пойдёт сначала на них. Если не хватит на всё сразу, он разделится между ними пропорционально нехватке, чтобы хватало и на жизнь, и на платежи.`});}
-    else out.push({tone:'good',title:`Обязательное на ${NOM[mi].toLowerCase()} покрыто`,text:'Новые деньги пойдут сверх плана: на награды, досрочное погашение долгов и цели.'});
+    if(P.coreNet>0.5){const n=funds.filter(f=>f.kind==='monthly'?monthReq(f,get)>0.5:f.kind==='debt'&&reqParts(f,get).base>0.5);
+      out.push({tone:'warn',title:`На жизнь и платежи в ${PREP[mi]} не хватает ${fmt(P.coreNet)}`,text:`Это ${n.slice(0,3).map(f=>'«'+f.name+'»').join(', ')}${n.length>3?` и ещё ${n.length-3}`:''}. Следующий доход после налога пойдёт сначала на жизнь (еда, жильё, связь), потом на минимальные платежи по долгам, и только потом на планы по срокам.`});}
+    else out.push({tone:'good',title:`Жизнь и платежи на ${NOM[mi].toLowerCase()} покрыты`,text:P.planNet>0.5?`Новые деньги пойдут на планы: ещё ${fmt(P.planNet)} на сроки по долгам и целям, потом награды и досрочное погашение.`:'Новые деньги пойдут сверх плана: на награды, досрочное погашение долгов и цели.'});
+  }
+  if(P.planNet>0.5){const C=planCheck(P);
+    if(!C.known) out.push({tone:'info',title:'Проверьте, реальны ли сроки',text:'Укажите обычный доход семьи в меню → Семья, и приложение посчитает, успеваете ли вы к срокам по долгам и целям.',act:{label:'Из чего складывается',act:'need-why'}});
+    else if(!C.ok||C.late.length) out.push({tone:'bad',title:'Сроки не сходятся с доходом',text:`На планы по срокам нужно около ${fmt(C.ask)} в месяц, а после жизни, минимальных платежей и наград остаётся ${fmt(C.free)}.`+(C.late.length?` Не успеть: ${C.late.slice(0,3).map(x=>`«${x.f.name}» к ${dateLabel(x.f.deadline)}${x.eta?` (реально ${monthIn(x.eta)})`:''}`).join(', ')}.`:'')+' Сдвиньте сроки или уберите их.',act:{label:'Посмотреть',act:'need-why'}});
   }
   for(const d of P.dl){
     if(d.left<=0){out.push({tone:'good',title:`«${d.f.name}»: ${d.f.kind==='debt'?'долг закрыт':'цель достигнута'}`,text:'Фонд больше ничего не забирает из доходов.'});continue}
@@ -283,7 +318,7 @@ function tips(P){
   for(const f of funds){const s=fstate(f,get);if(f.kind!=='debt'&&s.balance<-0.5) out.push({tone:'bad',title:`«${f.name}» в минусе на ${fmt(-s.balance)}`,text:'Потратили больше, чем было в фонде. '+(f.kind==='monthly'?'Следующий доход закроет минус в первую очередь, до остальных платежей.':f.kind==='goal'?'Закройте цель или переведите деньги из другого фонда: цель сама минус не покрывает.':'Фонд будет пополняться из новых доходов по своему правилу, но быстрее закрыть минус переводом из другого фонда.')})}
   if(P.free>0.5) out.push({tone:'warn',title:`${fmt(P.free)} лежат без фонда`,text:'Так бывает после удаления фонда или когда все фонды заполнены.',act:{label:'Разложить по фондам',act:'distribute-free'}});
   const noMin=funds.filter(f=>f.kind==='debt'&&!(+f.minPay)&&fstate(f,get).remaining>0.5);
-  if(noMin.length) out.push({tone:'info',title:`Укажите платёж в месяц по «${noMin[0].name}»`,text:'Без него долг гасится только деньгами сверх обязательного, и в месяц с маленьким доходом платёж может не набраться. С ним каждый доход откладывает на долг понемногу, вместе с едой и квартирой.',act:{label:'Открыть',act:'edit-fund',id:noMin[0].id}});
+  if(noMin.length) out.push({tone:'info',title:`Укажите платёж в месяц по «${noMin[0].name}»`,text:'Без него долг гасится только деньгами сверх обязательного, и в месяц с маленьким доходом платёж может не набраться. С ним каждый доход откладывает на долг понемногу, сразу после еды и квартиры.',act:{label:'Открыть',act:'edit-fund',id:noMin[0].id}});
   const monthlyNoDay=funds.filter(f=>f.kind==='monthly'&&!(+f.payDay));
   if(monthlyNoDay.length&&monthlyNoDay.length===funds.filter(f=>f.kind==='monthly').length) out.push({tone:'info',title:'Укажите дни платежей',text:'Откройте ежемесячный фонд и впишите день оплаты. На главной появятся ближайшие платежи, а напоминания можно добавить в календарь телефона.',act:{label:'Открыть фонды',act:'go-funds'}});
   return out;
@@ -472,11 +507,16 @@ function ringSvg(p,done){
 }
 function renderNow(){
   if(!activeFunds().length) return emptyFunds();
-  const P=monthPicture(); const mi=P.mi; const done=P.stillNet<=0.5;
-  let h=`<section class="hero"><div class="hero-main">${P.progress!==null?ringSvg(done?1:P.progress,done):''}<div>`;
-  if(!done){
-    h+=`<div class="eyebrow">Ещё нужно заработать в ${PREP[mi]}</div><div class="fig" data-count="${Math.round(P.stillGross)}">${fmt(P.stillGross)}</div>
-    <div class="note">${P.progress!==null?`План ${GEN[mi]} закрыт на ${Math.round(P.progress*100)}%. `:''}Эта сумма закроет платежи${P.dl.length?' и план по срокам':''}${P.pct?`, с учётом ${nf.format(P.pct)}% в процентные фонды`:''}.${P.extraGross>0.5?` Из них <b>${fmt(P.extraGross)}</b> нужно, чтобы успеть к срокам по долгам и целям.`:''} <button class="link" data-act="need-why">Из чего складывается</button></div>`;
+  const P=monthPicture(); const mi=P.mi; const core=P.coreNet>0.5, plans=P.planNet>0.5;
+  const C=plans?planCheck(P):null;
+  const planLine=!plans?'':C&&C.known&&!C.ok?` На планы по срокам и целям нужно ещё <b>${fmt(P.planGross)}</b>, <span class="neg">при вашем доходе сроки не сходятся</span>.`:` Ещё <b>${fmt(P.planGross)}</b> на планы: сроки по долгам и целям.`;
+  let h=`<section class="hero"><div class="hero-main">${P.coreProgress!==null?ringSvg(core?P.coreProgress:1,!core):''}<div>`;
+  if(core){
+    h+=`<div class="eyebrow">Ещё нужно заработать в ${PREP[mi]}</div><div class="fig" data-count="${Math.round(P.coreGross)}">${fmt(P.coreGross)}</div>
+    <div class="note">На жизнь и минимальные платежи по долгам${P.pct?`, с учётом ${nf.format(P.pct)}% в процентные фонды`:''}.${planLine} <button class="link" data-act="need-why">Из чего складывается</button></div>`;
+  } else if(plans){
+    h+=`<div class="eyebrow">Жизнь и платежи на ${NOM[mi].toLowerCase()} закрыты</div><div class="fig" data-count="${Math.round(P.planGross)}">${fmt(P.planGross)}</div>
+    <div class="note">Столько ещё нужно на планы: сроки по долгам и целям.${C&&C.known&&!C.ok?' <span class="neg">При вашем доходе сроки не сходятся.</span>':''} <button class="link" data-act="need-why">Из чего складывается</button></div>`;
   } else {
     h+=`<div class="eyebrow">${NOM[mi]}</div><div class="fig ok">План месяца выполнен</div><div class="note">Дальше доход пойдёт на награды, долги и цели по очереди фондов, остаток в накопления.</div>`;
   }
@@ -516,12 +556,20 @@ function paymentsBlock(){
 }
 
 /* ---------- вкладка «Фонды» ---------- */
+// Вкладка «Фонды»: фонды по уровням раскладки. Порядок важен только в очереди долгов и целей, поэтому перетаскивать можно только там
+const FTIERS=[
+  ['pct','С каждого дохода','Налог и процентные фонды берут свою долю с каждого поступления, раньше всех.',f=>f.kind==='percent'],
+  ['life','Жизнь: в первую очередь','Еда, жильё, связь, машина. Получают деньги раньше долгов и целей. Если дохода не хватает, делят его между собой пропорционально.',f=>f.kind==='monthly'],
+  ['queue','Долги и цели: очередь','Минимальные платежи по долгам идут сразу после жизни, потом планы по срокам. Свободные деньги после наград идут сверху вниз: верхний получает первым. Порядок меняется перетаскиванием за ручку справа.',f=>f.kind==='debt'||f.kind==='goal'],
+  ['reward','Награды','Процент от денег сверх плана, раньше очереди долгов и целей.',f=>f.kind==='reward'],
+  ['rest','Остаток','Получает всё, что осталось после всех.',f=>f.kind==='rest']];
+const fundTier=f=>(FTIERS.find(t=>t[3](f))||FTIERS[4])[0];
 function renderFunds(){
   const funds=activeFunds();
-  let h=`<section class="block"><h2>Очередь фондов</h2><details class="how"><summary>Как делятся доходы</summary><p class="note">Каждый доход делится в три шага. 1) Налог и процентные фонды берут свою долю. 2) Обязательное на месяц: платежи (еда, связь, жильё), минимальные платежи по долгам и взносы в цели со сроком. Если денег хватает, все получают полностью, если нет, деньги делятся между ними пропорционально нехватке. 3) Всё сверх этого: награды, потом долги и цели по очереди фондов, остаток в накопления. Порядок меняется перетаскиванием за ручку справа и важен только для третьего шага.</p></details></section>`;
-  if(!funds.length) return h+emptyFunds();
+  let h='';
+  if(!funds.length) return `<section class="block"><h2>Фонды</h2></section>`+emptyFunds();
   const {get}=stats();
-  h+=`<div class="list river" id="fundList">${funds.map((f,i)=>{
+  const row=(f,i,n,canDrag)=>{
     const s=fstate(f,get), v=+f.value||0;
     const val=f.kind==='percent'||f.kind==='reward'?`${nf.format(v)}%`:f.kind==='rest'?'':fmt(v)+(f.kind==='monthly'?' в месяц':'')+(+f.cap?` · по ${fmt(f.cap)} в месяц`:'')+(+f.minPay?` · платёж ${fmt(f.minPay)}`:'')+(+f.pct?` · ${nf2.format(+f.pct)}% с дохода`:'');
     const st=[f.kind==='debt'?`осталось ${fmt(s.remaining)}`:f.kind==='goal'?`накоплено ${fmt(s.collected)}`+(s.collected-s.balance>0.5?`, в фонде ${fmt(s.balance)}`:''):`в фонде ${fmt(s.balance)}`];
@@ -530,9 +578,11 @@ function renderFunds(){
     if(f.kind==='debt'&&+f.rate) st.push(`${nf2.format(+f.rate)}%`);
     return `<div class="fund k-${f.kind}" data-id="${esc(f.id)}">${fundIcon(f)}
       <button class="body" data-act="edit-fund" data-id="${esc(f.id)}" ${S.canWrite?'':'disabled'}><span class="name">${esc(f.name)}</span><span class="note"><span class="chip kind">${esc(kindLabel(f))}</span>${val}</span><span class="note">${st.join(' · ')}</span></button>
-      ${S.canWrite?`<button class="grip" data-id="${esc(f.id)}" aria-label="Перетащить «${esc(f.name)}». Стрелки вверх и вниз меняют позицию, сейчас ${i+1} из ${funds.length}">${ic('grip-vertical')}</button>${f.kind==='reward'?'<span></span>':`<button class="del" data-act="ask-del-fund" data-id="${esc(f.id)}" aria-label="Удалить фонд «${esc(f.name)}»">${ic('trash')}</button>`}`:'<span></span><span></span>'}
+      ${S.canWrite?`${canDrag?`<button class="grip" data-id="${esc(f.id)}" aria-label="Перетащить «${esc(f.name)}». Стрелки вверх и вниз меняют позицию, сейчас ${i+1} из ${n}">${ic('grip-vertical')}</button>`:'<span></span>'}${f.kind==='reward'?'<span></span>':`<button class="del" data-act="ask-del-fund" data-id="${esc(f.id)}" aria-label="Удалить фонд «${esc(f.name)}»">${ic('trash')}</button>`}`:'<span></span><span></span>'}
       ${S.confirmFund===f.id?`<div class="confirm"><span>Удалить «${esc(f.name)}»?${f.kind!=='debt'&&s.balance>0.5?` В нём лежит ${fmt(s.balance)}, эти деньги перейдут в «Без фонда».`:''} Записи в истории останутся.</span><span class="confirm-btns"><button class="btn sm danger" data-act="del-fund" data-id="${esc(f.id)}">Удалить</button><button class="btn sm ghost" data-act="cancel-del">Отмена</button></span></div>`:''}
-    </div>`}).join('')}</div>`;
+    </div>`};
+  h+=`<div id="fundList">${FTIERS.map(([id,t,d,fn])=>{const L=funds.filter(fn); if(!L.length) return '';
+    return `<section class="block tier"><h2>${t}</h2><p class="note">${d}</p><div class="list river" data-tier="${id}">${L.map((f,i)=>row(f,i,L.length,id==='queue'&&L.length>1)).join('')}</div></section>`}).join('')}</div>`;
   if(S.canWrite) h+=`<button class="btn primary" data-act="new-fund">${ic('plus')}Добавить фонд</button>`;
   return h;
 }
@@ -681,21 +731,24 @@ function splitLine(d){
   return `<div class="split">${G.map(g=>`<div class="sp-row"><span>${esc(g.t)}${g.n.length&&g.id!=='tax'?`<small>${esc(g.n.slice(0,3).join(', '))}${g.n.length>3?'…':''}</small>`:''}</span><b>${fmt(g.v)}</b></div>`).join('')}</div>`;
 }
 function openNeedWhy(){
-  const P=monthPicture(), {get}=P; const mi=P.mi;
+  const P=monthPicture(), {get}=P; const mi=P.mi, C=planCheck(P);
   const rows=P.funds.map(f=>({f,...reqParts(f,get)})).filter(r=>r.total>0.5);
-  const pay=rows.filter(r=>r.base>0.5), dl=rows.filter(r=>r.extra>0.5);
+  const life=rows.filter(r=>r.f.kind==='monthly'), mins=rows.filter(r=>r.f.kind==='debt'&&r.base>0.5), plan=rows.filter(r=>r.extra>0.5||(r.f.kind==='goal'&&r.base>0.5));
   const row=(r,amt,sub)=>`<button class="frow" data-act="edit-fund" data-id="${esc(r.f.id)}" ${S.canWrite?'':'disabled'}>${fundIcon(r.f,'sm')}<span class="fb"><span class="row-main"><span class="name">${esc(r.f.name)}</span><span class="amt">${fmt(amt)}</span></span><span class="note">${sub}</span></span></button>`;
-  const paySub=r=>r.f.kind==='monthly'?`платёж в месяц, в фонде не хватает до нормы`:r.f.kind==='debt'?'минимальный платёж по долгу':'взнос в цель в месяц';
-  const dlSub=r=>{const d=r.d;return d?`срок до ${esc(dateLabel(r.f.deadline))}: осталось ${fmt(d.left)}, ${d.ml} ${plural(d.ml,'месяц','месяца','месяцев')}${d.interest?' с учётом процентов':''}`:''};
-  openSheet(`${sheetHead(`Ещё нужно заработать в ${PREP[mi]}`)}
-  <p class="note">Столько нужно получить дохода, чтобы закрыть все обязательные платежи и успеть к срокам. Задвоения нет: каждый фонд посчитан один раз.</p>
-  ${pay.length?`<div class="eyebrow">Обязательные платежи</div><div class="list river">${pay.map(r=>row(r,r.base,paySub(r))).join('')}</div>`:''}
-  ${dl.length?`<div class="eyebrow">Чтобы успеть к срокам</div><div class="list river">${dl.map(r=>row(r,r.extra,dlSub(r))).join('')}</div>
-    <p class="note">Срок у долга или цели добавляет в этот месяц равную долю остатка. Если срок поставили не всерьёз или он слишком близкий, откройте фонд и уберите или сдвиньте срок: сумма сразу пересчитается.</p>`:''}
+  const late=id=>C.late.find(x=>x.f.id===id);
+  const planSub=r=>{const d=r.d; if(!d) return 'взнос в цель в месяц';
+    const L=late(r.f.id);
+    return `срок до ${esc(dateLabel(r.f.deadline))}: осталось ${fmt(d.left)}, ${d.ml} ${plural(d.ml,'месяц','месяца','месяцев')}${d.interest?' с учётом процентов':''}`+(C.known?(L?` · <span class="neg">${L.eta?`по доходу реально ${monthIn(L.eta)}`:'при вашем доходе не закрывается'}</span>`:' · успеваете'):'');};
+  const sec=(t,list,amt,sub)=>list.length?`<div class="eyebrow">${t}</div><div class="list river">${list.map(r=>row(r,amt(r),sub(r))).join('')}</div>`:'';
+  const line=(t,v,b)=>`<div class="chg-row" style="grid-template-columns:minmax(0,1fr) auto"><span>${b?`<b>${t}</b>`:t}</span><b>${v}</b></div>`;
+  openSheet(`${sheetHead(`Деньги на ${NOM[mi].toLowerCase()}`)}
+  <p class="note">Доход раскладывается по уровням: сначала налог, потом жизнь, потом минимальные платежи по долгам, и только потом планы по срокам. Пока предыдущий уровень не закрыт, следующий денег не получает. Каждый фонд посчитан один раз.</p>
+  ${sec('1. Жизнь',life,r=>r.total,()=>'платёж в месяц, не хватает до нормы')}
+  ${sec('2. Минимальные платежи по долгам',mins,r=>r.base,()=>'минимальный платёж')}
+  ${sec('3. Планы: сроки и взносы в цели',plan,r=>r.f.kind==='debt'?r.extra:r.total,planSub)}
   ${!rows.length?'<p class="note">На этот месяц всё закрыто.</p>':''}
-  <div class="list chg"><div class="chg-row" style="grid-template-columns:minmax(0,1fr) auto"><span>Обязательное на месяц</span><b>${fmt(P.stillNet)}</b></div>
-  ${P.pct>0?`<div class="chg-row" style="grid-template-columns:minmax(0,1fr) auto"><span>Налог и процентные фонды (${nf.format(P.pct)}%)</span><b>+${fmt(P.stillGross-P.stillNet)}</b></div>`:''}
-  <div class="chg-row" style="grid-template-columns:minmax(0,1fr) auto"><span><b>Нужно заработать</b></span><b>${fmt(P.stillGross)}</b></div></div>`);
+  <div class="list chg">${line('Жизнь и минимальные платежи',fmt(P.coreNet))}${P.pct>0?line(`Налог и процентные фонды (${nf.format(P.pct)}%)`,'+'+fmt(P.coreGross-P.coreNet)):''}${line('Нужно заработать',fmt(P.coreGross),true)}${P.planNet>0.5?line('И ещё на планы',fmt(P.planGross)):''}</div>
+  ${P.planNet>0.5?(C.known?`<div class="tip ${C.ok&&!C.late.length?'good':'bad'}"><span class="dot"></span><div><b>${C.ok&&!C.late.length?'Планы реальны при вашем доходе':'Планы не сходятся с доходом'}</b><span class="muted small">При обычном доходе ${fmt(C.inc)} после жизни, минимальных платежей и наград на планы остаётся около ${fmt(C.free)} в месяц, а по срокам нужно ${fmt(C.ask)}.${C.ok&&!C.late.length?'':' Откройте фонд и сдвиньте или уберите срок: без срока долг гасится свободными деньгами по очереди, а цель копится, когда остаются деньги.'}</span></div></div>`:'<p class="note">Укажите обычный доход семьи в меню → Семья, чтобы проверить, реальны ли сроки.</p>'):''}`);
 }
 function effectRows(rows){
   return `<div class="list chg">${rows.map(r=>{const neg=!r.debt&&r.after<-0.5;
@@ -740,7 +793,7 @@ function openIncome(mode,tx){
       const rows=allocEffect(delta);
       box.innerHTML=rows.length?`<div class="eyebrow">Что изменится</div>${effectRows(rows)}<p class="note">Нехватка снимается сначала с накоплений, целей и наград, обязательные платежи в последнюю очередь. Добавка раскладывается как обычный доход.</p>`:'<p class="note">Раскладка по фондам не изменится.</p>'};
     const draw=()=>{if(isEdit)return drawEdit(); const d=calc(); const box=$('#planBox');
-      if(!d){box.innerHTML=`<p class="note">Деньги разойдутся по фондам сами: сначала налог, потом обязательное на месяц пропорционально размеру каждого фонда, остальное сверх плана.</p>`;return}
+      if(!d){box.innerHTML=`<p class="note">Деньги разойдутся по фондам сами: сначала налог, потом жизнь (еда, жильё, связь), потом минимальные платежи по долгам, потом планы по срокам, остальное сверх плана.</p>`;return}
       box.innerHTML=`<div class="eyebrow">Разойдётся само</div>${splitLine(d)}${d.short>0.5?`<p class="note">На обязательное в этом месяце ещё не хватит ${fmt(d.short)}: эти деньги разделены между обязательными фондами пропорционально.</p>`:''}`};
     $('#inAmt').addEventListener('input',draw); $('#inTax')?.addEventListener('change',draw); draw();
     $('#inAmt').addEventListener('blur',()=>{const n=parseAmt($('#inAmt').value);if(n)$('#inAmt').value=nf.format(n)});
@@ -906,6 +959,7 @@ function openFund(f,kindPreset){
   <div class="field" id="fDebtBox"><label for="fRate">Ставка, % годовых</label><input id="fRate" inputmode="decimal" placeholder="Например, 29,9" value="${+f.rate?nf2.format(f.rate):f.rateSet?'0':''}"></div>
   <div class="grid2"><div class="field" id="fDayBox"><label for="fDay">День платежа</label><input id="fDay" type="number" inputmode="numeric" min="1" max="31" placeholder="1–31" value="${+f.payDay?Math.round(+f.payDay):''}"></div>
   <div class="field" id="fDlBox"><label for="fDl">Срок (необязательно)</label><input type="date" id="fDl" value="${esc(f.deadline||'')}"></div></div>
+  <p class="note" id="fDlNote"></p>
   <div id="fAccBox">${accSelect('fAcc',fundAcc(f),'Где хранится','<option value="">Не указано</option>')}</div>
   <div class="field" id="fCurBox"><label for="fCur" id="fCurLbl"></label><input id="fCur" inputmode="decimal" value="${isNew?'':nf.format(cur)}"><span class="note" id="fCurNote"></span></div>
   <div class="err" id="fErr"></div>
@@ -947,9 +1001,24 @@ function openFund(f,kindPreset){
       $('#fCurBox').hidden=isReward;
       const cb=$('#fCloseBox'); if(cb) cb.hidden=!accum;
       $('#fCurLbl').textContent=plainDebt?'Сколько осталось погасить, ₽':accum?(debt?'Сколько уже отложено на долг, ₽':'Сколько уже накоплено, ₽'):'Сколько сейчас лежит в фонде, ₽';
+      setTimeout(dlNote,0);
       $('#fCurNote').textContent=plainDebt?'Укажите текущий остаток. Позже его можно поправить, если банк начислил проценты.':'Если деньги уже отложены, укажите сумму. Иначе оставьте пустым.';
       icoNote();
     };
+    // Проверка срока по обычному доходу: успеете ли, и когда на самом деле закроется долг или накопится цель
+    const dlNote=()=>{const el=$('#fDlNote'); if(!el) return; el.innerHTML='';
+      const dl=$('#fDl').value; if(isReward||!(accum||debt)||!dl) return;
+      const inc=usualIncome(); if(!inc){el.textContent='Укажите обычный доход семьи в меню → Семья, и здесь появится проверка срока.';return}
+      const v={amt:Math.round(parseAmt($('#fAmt').value)),pct:parseAmt($('#fPct').value),tgt:Math.round(parseAmt($('#fTgt').value)),day:0,rate:parseAmt($('#fRate').value),rateSet:false,tax:false,dl};
+      const ff=fundFields({rule,debt,accum,reward:false},v), cur=parseAmt($('#fCur').value);
+      const left=ff.kind==='debt'?cur:Math.max(0,(+ff.value||0)-cur); if(!(left>0)) return;
+      const tmp={...f,...ff,id:f.id||'__new',name:$('#fName').value||'фонд'};
+      const list=activeFunds().filter(x=>x.id!==tmp.id), at=activeFunds().findIndex(x=>x.id===tmp.id); list.splice(at<0?list.length:at,0,tmp);
+      const {get}=stats(); const k=etaSim(list,inc,x=>x.id===tmp.id?left:leftOf(x,get))[tmp.id], ml=monthsLeft(dl), what=ff.kind==='debt'?'долг закроется':'накопится';
+      if(k==null){el.innerHTML='<span class="neg">При вашем доходе это не закрывается:</span> после жизни и минимальных платежей свободных денег не остаётся.';return}
+      el.innerHTML=k>ml?`<span class="neg">К ${esc(dateLabel(dl))} не успеть.</span> При обычном доходе ${what} примерно ${monthIn(k)}. Срок сделает этот план обязательным на каждый месяц, поставьте реальный или уберите его.`:`Успеваете: при обычном доходе ${what} примерно ${monthIn(k)}.`;
+    };
+    ['#fDl','#fTgt','#fCur','#fAmt','#fPct','#fRate'].forEach(s=>$(s).addEventListener('input',dlNote));
     $('#fRule')?.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;rule=b.dataset.k;sync()});
     $('#fDebtOn')?.addEventListener('change',e=>{debt=e.target.checked;sync()});
     $('#fAccOn')?.addEventListener('change',e=>{accum=e.target.checked;sync()});
@@ -1091,10 +1160,18 @@ async function persistOrder(list){
   try{for(let k=0;k<list.length;k++){if((+list[k].order||0)!==k+1) await DB.update('funds',list[k].id,{order:k+1})}}
   catch(e){toast('Не получилось изменить порядок.')}
 }
+// Новый порядок фондов одной группы ставится на их же места в общем списке
+function reorderGroup(ids){
+  const list=activeFunds().slice(), by=Object.fromEntries(list.map(f=>[f.id,f])), slots=[];
+  list.forEach((f,i)=>{if(ids.includes(f.id))slots.push(i)});
+  slots.forEach((s,k)=>{if(by[ids[k]])list[s]=by[ids[k]]});
+  return list;
+}
 async function moveFund(id,d){
-  const list=activeFunds().slice(); const i=list.findIndex(f=>f.id===id); const j=i+d; if(i<0||j<0||j>=list.length)return;
-  [list[i],list[j]]=[list[j],list[i]];
-  await persistOrder(list);
+  const f=fundById(id); if(!f) return; const t=fundTier(f);
+  const ids=activeFunds().filter(x=>fundTier(x)===t).map(x=>x.id); const i=ids.indexOf(id), j=i+d; if(i<0||j<0||j>=ids.length)return;
+  [ids[i],ids[j]]=[ids[j],ids[i]];
+  await persistOrder(reorderGroup(ids));
 }
 async function deleteTx(id){
   const t=S.tx.find(x=>x.id===id); if(!t)return; const {id:_,...data}=t;
@@ -1225,7 +1302,9 @@ function debtList(){const {get}=stats();return activeFunds().filter(f=>f.kind===
 function orderDebts(list,strat){const L=list.slice();if(strat==='avalanche')L.sort((a,b)=>b.rate-a.rate||a.bal-b.bal);else if(strat==='snowball')L.sort((a,b)=>a.bal-b.bal||b.rate-a.rate);return L}
 function debtBudget(){
   const o=+(S.household&&S.household.debtBudget)||0; if(o>0) return {v:o,auto:false,known:true};
-  const F=monthFlow(monthPicture()); return {v:Math.max(0,Math.round(F.known?F.free+F.debtPlan:0)),auto:true,known:F.known};
+  // из реального дохода: минимальные платежи плюс свободные деньги после жизни, минимальных платежей и наград (сроки бюджет не раздувают)
+  const P=monthPicture(), C=planCheck(P), mins=sum(P.funds.filter(f=>f.kind==='debt').map(f=>Math.min(+f.minPay||0,leftOf(f,P.get))));
+  return {v:Math.max(0,Math.round(C.known?C.free+mins:0)),auto:true,known:C.known};
 }
 function simulate(strat,budget,list){
   const live=orderDebts((list||debtList()).filter(d=>d.bal>0.5),strat).map(d=>({...d}));
@@ -1332,9 +1411,9 @@ function endDrag(e){
   const {row,rows,from,to}=drag; drag=null;
   document.body.classList.remove('is-dragging');
   rows.forEach(r=>{r.style.transform='';r.classList.remove('shift','dragging')});
-  if(to!==from){const list=activeFunds().slice();const [m]=list.splice(from,1);list.splice(to,0,m);
+  if(to!==from){const ids=rows.map(r=>r.dataset.id);const [m]=ids.splice(from,1);ids.splice(to,0,m);
     const el=row.parentElement; const node=rows[from]; el.insertBefore(node,to>from?rows[to].nextSibling:rows[to]);
-    persistOrder(list);}
+    persistOrder(reorderGroup(ids));}
 }
 document.addEventListener('mousedown',e=>{if(e.target.closest&&e.target.closest('.fund .grip'))e.preventDefault()});
 document.addEventListener('pointerup',endDrag); document.addEventListener('pointercancel',endDrag);
@@ -1597,11 +1676,11 @@ const WZ_KINDS={
     ex:'инвестиции 10%. Пришло 200 000 ₽, и 20 000 ₽ сразу ушли в фонд.',
     ph:'С дохода',sfx:'%',tpl:['Инвестиции','Подушка безопасности','Образование','Благотворительность']},
   goal:{t:'Накопить сумму',e:'🎯',s:'Копит до нужной суммы',
-    why:'Копит до нужной суммы из денег сверх обязательного. Если задать срок или лимит в месяц, часть взноса станет обязательной и будет делиться вместе с едой и платежами. Тратить из него можно в любой момент: потраченное не нужно докладывать заново. Когда задача выполнена, закройте цель, а остаток перенесите, куда скажете.',
+    why:'Копит до нужной суммы из денег сверх обязательного. Если задать срок или лимит в месяц, часть взноса станет планом на месяц: он получает деньги после жизни и минимальных платежей по долгам. Тратить из него можно в любой момент: потраченное не нужно докладывать заново. Когда задача выполнена, закройте цель, а остаток перенесите, куда скажете.',
     ex:'день рождения 16 000 ₽. Накопили 3 000 ₽, купили подарок за 2 000 ₽: в фонде 1 000 ₽, а копить осталось 13 000 ₽.',
     ph:'Цель',sfx:'₽',tpl:['Подушка безопасности','Отпуск','Переезд','Ремонт','Машина','Подарки']},
   debt:{t:'Погасить долг',e:'💳',s:'Гасит долг свободными деньгами',
-    why:`Минимальный платёж идёт вместе с обязательным, а досрочно долг гасится только деньгами сверх него: на еду и бензин хватит. Когда долг закрыт, фонд выключается, а семье положена награда: ${BONUS_PCT}% от суммы долга.`,
+    why:`Минимальный платёж идёт сразу после жизни (еда, жильё, связь), а досрочно долг гасится только деньгами сверх него: на еду и бензин хватит. Когда долг закрыт, фонд выключается, а семье положена награда: ${BONUS_PCT}% от суммы долга.`,
     ex:'кредитка 60 000 ₽ под 30%, платёж 3 000 ₽ в месяц. Укажите остаток, ставку и платёж, и план покажет, когда она закроется.',
     ph:'Остаток',sfx:'₽',tpl:['Кредитка','Потребкредит','Рассрочка','Долг другу','Долг за учёбу']}
 };
@@ -1737,7 +1816,7 @@ function wzBody(id){
     <div class="wz-list">${z.funds.length?z.funds.map((r,i)=>wzFundRow(r,i)).join(''):'<p class="note">Пока пусто. Выберите тип выше и нажмите на подходящий шаблон.</p>'}</div>`;}
   if(id==='plan'){const nd=z.funds.filter(r=>r.kind==='debt'&&wzValid(r)).length;
     return `<h2 class="gate-h">Ваш план</h2>
-    <p class="muted small">Так растечётся обычный месячный доход. Если придёт меньше, его разделят между обязательными фондами пропорционально: и на жизнь, и на платежи.</p>
+    <p class="muted small">Так растечётся обычный месячный доход. Если придёт меньше, сначала закроется жизнь (еда, жильё, связь), потом минимальные платежи по долгам, а планы по срокам подождут.</p>
     <div id="wzSum"></div>
     ${sum(wzAccs().map(a=>nA(a.bal)))>0?`<section class="card"><label class="check"><input type="checkbox" data-wz="found" ${z.found?'checked':''}> <b>Разложить ${fmt(sum(wzAccs().map(a=>nA(a.bal))))} с карт по фондам</b></label><p class="note">Деньги, которые уже есть, сразу разойдутся по фондам: сначала обязательное на этот месяц, потом остальное.</p></section>`:''}
     ${nd>=2?`<section class="block"><h2>Какой долг гасить первым</h2><div class="list strat" id="wzStrat"></div><p class="note" id="wzStratNote"></p></section>`:''}
@@ -1755,7 +1834,7 @@ function wzBody(id){
     <div class="eyebrow">Что сделает второй человек</div>
     <div class="flow">${[['Откроет ссылку','она придёт вместе с кодом'],['Зарегистрируется','почта и пароль'],['Выберет «Присоединиться по коду»','и увидит ваш общий бюджет']].map(([a,b],i)=>`<div class="flow-step"><span class="flow-n">${i+1}</span><div><b>${a}</b><span class="note">${b}</span></div></div>`).join('')}</div>`;}
   if(id==='queue') return `<h2 class="gate-h">Как делится доход</h2>
-    <div class="hint">Так ваш обычный доход разойдётся по фондам: сначала налог, затем обязательное на месяц (еда, связь, платежи по долгам), потом сверх плана по очереди фондов. Порядок и суммы меняются в разделе «Фонды».</div>
+    <div class="hint">Так ваш обычный доход разойдётся по фондам: сначала налог, затем жизнь (еда, жильё, связь), затем минимальные платежи по долгам, потом сверх плана по очереди фондов. Порядок и суммы меняются в разделе «Фонды».</div>
     <div id="wzSplit"></div>`;
   if(id==='wishes') return `<h2 class="gate-h">Желания</h2>
     <div class="hint">Что хочется купить для себя или семьи. Сервис посчитает, когда покупка станет возможной без ущерба для плана, и подскажет, когда срок подойдёт.</div>
@@ -1950,7 +2029,7 @@ async function wzAction(act,a){
    и всем, кто уже пользуется. Повтор: меню ☰ → «Показать подсказки». */
 const TOUR=[
   {sel:'main .hero',t:'Главное за месяц',d:'Сколько ещё нужно заработать, чтобы закрыть все платежи по плану. Кольцо показывает, на сколько план уже выполнен.'},
-  {sel:'main [data-act="open-income"]',t:'Пришли деньги',d:'Зарплата, подработка, пособие: жмите сюда. Деньги сами разложатся по фондам: сначала налог и обязательные платежи, потом награды, долги и цели по очереди.'},
+  {sel:'main [data-act="open-income"]',t:'Пришли деньги',d:'Зарплата, подработка, пособие: жмите сюда. Деньги сами разложатся по фондам: сначала налог и жизнь, потом минимальные платежи по долгам, потом награды, долги и цели по очереди.'},
   {sel:'main [data-act="open-expense"]',t:'Потратили',d:'Запишите трату и выберите фонд, из которого ушли деньги. Остаток в фонде пересчитается сам.'},
   {sel:'main [data-act="new-wish"]',t:'Хочу купить',d:'Добавьте желание, и приложение подскажет, когда покупка не помешает плану.'},
   {sel:'nav.tabs .wrap',t:'Разделы',d:'«Фонды» — очередь и настройки фондов. «Ресурсы» — карты и наличка: где сколько лежит и что куда переложить. «Долги» — план погашения. «История» — все записи.'},
