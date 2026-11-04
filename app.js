@@ -739,10 +739,11 @@ function txRow(t){
     return `<details class="tx"><summary><span class="fi sm k-rest" aria-hidden="true">✅</span><span class="t-main"><span class="t-title">Отмечен оплаченным: «${esc(fundName(t.fundId))}»</span><br><span class="note">без записи траты${who?' · ':''}${who}</span></span><span class="t-amt">${t.amount>0?fmt(t.amount):''}</span></summary><div class="tx-body"><div class="note">Платёж уже оплачен: обязательство месяца по нему закрыто, а деньги в фондах и на картах не менялись. Удалите отметку, и платёж снова появится в «Ближайших платежах».</div>${S.canWrite?`<div class="tx-acts"><button class="btn sm danger" data-act="del-tx" data-id="${esc(t.id)}">${ic('trash')}Удалить отметку</button></div>`:''}</div></details>`;
   }
   const isIn=t.type==='income', isTr=t.type==='transfer';
-  const title=t.note||(isIn?'Доход':isTr?'Перевод между фондами':fundName(t.fundId));
+  const sn=isIn?srcName(t.src):'';
+  const title=isIn?(sn||t.note||'Доход'):t.note||(isTr?'Перевод между фондами':fundName(t.fundId));
   const accTxt=accounts().length&&t.acc?(isIn?`на «${accName(t.acc)}»`:t.type==='expense'?`с «${accName(t.acc)}»`:''):'';
   const who=t.by?`${avatar(t.by)}<span data-who="${esc(t.by)}">${esc(S.names[t.by]||'')}</span>`:'';
-  const sub=[isTr?`из «${fundName(t.from)}»`:isIn?'':(t.note?fundName(t.fundId):''), (!isIn&&!isTr&&t.from&&t.from!==t.fundId)?`из «${fundName(t.from)}»`:'', t.cover&&+t.cover.amt>0?`${fmt(t.cover.amt)} из «${fundName(t.cover.fid)}»`:'', accTxt].filter(Boolean).map(esc).join(' · ');
+  const sub=[isTr?`из «${fundName(t.from)}»`:isIn?(sn&&t.note?t.note:''):(t.note?fundName(t.fundId):''), (!isIn&&!isTr&&t.from&&t.from!==t.fundId)?`из «${fundName(t.from)}»`:'', t.cover&&+t.cover.amt>0?`${fmt(t.cover.amt)} из «${fundName(t.cover.fid)}»`:'', accTxt].filter(Boolean).map(esc).join(' · ');
   const icon=isIn?`<span class="fi sm k-monthly" aria-hidden="true">💵</span>`:isTr?`<span class="fi sm k-rest" aria-hidden="true">🔀</span>`:fundIcon(fundById(t.fundId)||{kind:'rest',name:''},'sm');
   let body='';
   if(isIn||isTr) body+=Object.entries(t.alloc||{}).filter(([,a])=>a>0).map(([fid,a])=>`<div class="alloc-line"><span>${isTr?'→ ':''}${esc(fundName(fid))}</span><span>${fmt(a)}</span></div>`).join('');
@@ -848,7 +849,9 @@ function openIncome(mode,tx){
   openSheet(`${sheetHead(title)}${isFree?`<p class="note">Без фонда лежит ${fmt(freeBal)}. Они разойдутся по фондам, налог с них не берётся.</p>`:isFound?`<p class="note">На картах ${fmt(freeBal)}, которых нет ни в одном фонде. Они разойдутся по фондам, налог с них не берётся.</p>`:isEdit?'':typeSeg('income')}
   <div class="field"><label for="inAmt">Сумма</label><input class="big" id="inAmt" inputmode="decimal" placeholder="0 ₽" autocomplete="off" value="${amt0}"></div>
   ${isFree||isFound?'':`${L.length?accSelect('inAcc',accIn&&accById(accIn)?accIn:L[0].id,'Куда пришли'):''}
-  <div class="grid2"><div class="field"><label for="inDate">Дата</label><input type="date" id="inDate" value="${esc(isEdit?tx.date:today())}"></div><div class="field"><label for="inNote">Откуда</label><input id="inNote" placeholder="Зарплата, ученики…" value="${esc(isEdit?tx.note||'':'')}"></div></div>
+  <div class="field"><span class="lbl">Откуда</span><div class="chips src-pick" id="inSrc"></div>
+    <div class="src-new" id="inSrcNew" hidden><input id="inSrcNm" placeholder="Название источника" autocomplete="off"><button type="button" class="btn sm primary" id="inSrcAdd">Добавить</button></div></div>
+  <div class="grid2"><div class="field"><label for="inDate">Дата</label><input type="date" id="inDate" value="${esc(isEdit?tx.date:today())}"></div><div class="field"><label for="inNote">Комментарий</label><input id="inNote" data-nofocus="1" placeholder="Необязательно" value="${esc(isEdit?tx.note||'':'')}"></div></div>
   ${hasTax?`<label class="check"><input type="checkbox" id="inTax" ${isEdit?(tx.taxable===false?'':'checked'):'checked'}> Облагается налогом</label>`:''}`}
   <div id="planBox"></div>
   <div class="err" id="inErr"></div>
@@ -865,6 +868,25 @@ function openIncome(mode,tx){
       if(!d){box.innerHTML=`<p class="note">Деньги разойдутся по фондам сами: сначала налог, потом жизнь (еда, жильё, связь), потом минимальные платежи по долгам, потом планы по срокам, остальное сверх плана.</p>`;return}
       box.innerHTML=`<div class="eyebrow">Разойдётся само</div>${splitLine(d)}${d.short>0.5?`<p class="note">На обязательное в этом месяце ещё не хватит ${fmt(d.short)}: эти деньги разделены между обязательными фондами пропорционально.</p>`:''}`};
     $('#inAmt').addEventListener('input',draw); $('#inTax')?.addEventListener('change',draw); draw();
+    // источник: свои источники семьи, а пока их нет, шаблоны (создаются при сохранении). Последний выбранный подставляется сам
+    let src=isEdit?(tx.src||''):'', srcPick='';
+    if(!isEdit&&!isFree&&!isFound){const last=LS.get('ff-src-in:'+S.hid);if(last&&incomeSources().some(z=>z.id===last))src=last}
+    const drawSrc=()=>{const box=$('#inSrc'); if(!box) return; const L=incomeSources();
+      // свои источники, а пока их мало, рядом ещё шаблоны (пунктиром)
+      const items=[...L.map(x=>({k:x.id,n:x.name})),...SRC_TPL.filter(n=>!L.some(x=>x.name.toLowerCase()===n.toLowerCase())).slice(0,Math.max(0,5-L.length)).map(n=>({k:'tpl:'+n,n,tpl:1}))];
+      const cur=src||srcPick;
+      box.innerHTML=items.map(x=>`<button type="button" class="chip-btn${x.tpl?' tpl':''}" data-src="${esc(x.k)}" aria-pressed="${x.k===cur}">${esc(x.n)}</button>`).join('')+(S.canWrite?`<button type="button" class="chip-btn" data-src="+" aria-label="Новый источник">${ic('plus')}</button>`:'');
+    };
+    const pickTax=name=>{const t=$('#inTax'); if(!t||isEdit) return; const x=incomeSources().find(z=>z.name===name); t.checked=x?x.taxable!==false:!SRC_NOTAX.test(name); draw()};
+    $('#inSrc')?.addEventListener('click',e=>{const b=e.target.closest('[data-src]'); if(!b) return; const k=b.dataset.src;
+      if(k==='+'){const n=$('#inSrcNew');n.hidden=false;$('#inSrcNm').focus();return}
+      if(k===(src||srcPick)){src='';srcPick=''} else if(k.startsWith('tpl:')){srcPick=k;src='';pickTax(k.slice(4))} else {src=k;srcPick='';pickTax(srcName(k))}
+      drawSrc()});
+    $('#inSrcAdd')?.addEventListener('click',async()=>{const n=$('#inSrcNm').value.trim(); if(!n) return;
+      const ex=incomeSources().find(z=>z.name.toLowerCase()===n.toLowerCase()); src=ex?ex.id:await addSource(n); srcPick='';
+      $('#inSrcNm').value=''; $('#inSrcNew').hidden=true; pickTax(n); drawSrc()});
+    $('#inSrcNm')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('#inSrcAdd').click()}});
+    drawSrc();
     $('#inAmt').addEventListener('blur',()=>{const n=parseAmt($('#inAmt').value);if(n)$('#inAmt').value=nf.format(n)});
     $('#inSave').addEventListener('click',async()=>{
       const amt=Math.round(parseAmt($('#inAmt').value)); if(amt<=0){$('#inErr').textContent='Введите сумму больше нуля.';return}
@@ -883,7 +905,9 @@ function openIncome(mode,tx){
       }
       const date=$('#inDate').value||today(); const note=$('#inNote').value.trim(); const acc=$('#inAcc')?$('#inAcc').value:'';
       if(acc) LS.set('ff-acc-in:'+S.hid,acc);
-      const data={amount:amt,date,month:date.slice(0,7),note,taxable:hasTax?taxable():(isEdit?tx.taxable!==false:true),alloc,acc};
+      if(srcPick){const n=srcPick.slice(4);const ex=incomeSources().find(z=>z.name===n);src=ex?ex.id:await addSource(n)}
+      if(src) LS.set('ff-src-in:'+S.hid,src);
+      const data={amount:amt,date,month:date.slice(0,7),note,src,taxable:hasTax?taxable():(isEdit?tx.taxable!==false:true),alloc,acc};
       if(isEdit) await write(async()=>{await DB.update('tx',tx.id,data)},'Доход изменён');
       else{await write(async()=>{await DB.add('tx',{type:'income',...data,by:S.uid||null,createdAt:Date.now()})},'Доход записан и разложен по фондам');
         if(acc) setTimeout(()=>openMoves(true),400)}
@@ -1358,14 +1382,14 @@ async function saveFile(name,mime,text,opt={}){
 }
 function exportCSV(){
   const q=v=>{v=String(v??'');return /[";\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
-  const head=['Дата','Тип','Сумма','Фонд','Из фонда','Комментарий','Кто','Раскладка по фондам'];
+  const head=['Дата','Тип','Сумма','Источник','Фонд','Из фонда','Комментарий','Кто','Раскладка по фондам'];
   const rows=S.tx.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(t=>{
     const type=t.type==='income'?(t.found?'Разложено с карт':'Доход'):t.type==='expense'?'Трата':t.type==='move'?(t.debt?'Платёж по долгу':'Перевод между картами'):t.type==='paidmark'?'Отметка об оплате':'Перевод';
     const fund=t.type==='expense'?fundName(t.fundId):'';
     const from=t.type==='expense'?(t.from&&t.from!==t.fundId?fundName(t.from):''):t.type==='transfer'?fundName(t.from):'';
     const alloc=Object.entries(t.alloc||{}).filter(([,a])=>a>0).map(([k,a])=>`${fundName(k)}: ${Math.round(a)}`).join(', ');
     const note=t.type==='move'?`${accName(t.from)} → ${t.debt?fundName(t.debt):accName(t.to)}`:t.type==='paidmark'?fundName(t.fundId):(t.note||'');
-    return [t.date,type,Math.round(+t.amount||0),fund,from,note,S.members[t.by]||'',alloc].map(q).join(';');
+    return [t.date,type,Math.round(+t.amount||0),t.type==='income'?srcName(t.src):'',fund,from,note,S.members[t.by]||'',alloc].map(q).join(';');
   });
   saveFile(`potok-zapisi-${today()}.csv`,'text/csv;charset=utf-8','\ufeff'+[head.join(';'),...rows].join('\r\n')+'\r\n');
 }
@@ -1553,6 +1577,8 @@ document.addEventListener('click',async e=>{
   else if(act==='del-tx'){if(S.canWrite){const t=S.tx.find(x=>x.id===a.dataset.id);if(t&&t.type==='income'&&t.alloc)openDeleteIncome(t);else deleteTx(a.dataset.id)}}
   else if(act==='go-res'){S.tab='res';S.enterNext=true;render();window.scrollTo(0,0)}
   else if(act==='new-acc'){if(S.canWrite)openAccount(null)}
+  else if(act==='new-src'){if(S.canWrite)openSource(null)}
+  else if(act==='edit-src'){const x=incomeSources().find(z=>z.id===a.dataset.id);if(x&&S.canWrite)openSource(x)}
   else if(act==='edit-acc'){const x=accById(a.dataset.id);if(x&&S.canWrite)openAccount(x)}
   else if(act==='found'){if(S.canWrite)openIncome('found')}
   else if(act==='mv-done'){const m=(S.moves||[])[+a.dataset.i];if(m&&S.canWrite){a.disabled=true;try{await recordMove(m);toast(m.debt?'Платёж отмечен':'Перевод отмечен')}catch(e){toast('Не получилось сохранить.');a.disabled=false}}}
@@ -1702,6 +1728,44 @@ function openMoves(afterIncome){
   S.sheetRefresh=()=>{const R2=reconcile();if(!R2||!R2.moves.length){closeSheet();return}S.moves=R2.moves;const el=$('#mvList');if(el)el.innerHTML=R2.moves.map(moveRow).join('')};
   return true;
 }
+/* ---------- источники доходов: живут в «Ресурсах», при записи дохода выбираются касанием ---------- */
+const SRC_TPL=['Зарплата','Аванс','Подработка','Свой бизнес','Декретные','Пособие','Кэшбэк','Подарок'];
+const SRC_NOTAX=/декрет|пособ|кэшб|кешб|подар|возврат/i;   // обычно не облагаются налогом
+function incomeSources(){const a=(S.household&&S.household.incomeSources)||{};return Object.entries(a).filter(([,v])=>v&&!v.archived).map(([id,v])=>({id,...v})).sort((x,y)=>(+x.order||0)-(+y.order||0)||(x.createdAt||0)-(y.createdAt||0))}
+function srcName(id){const a=(S.household&&S.household.incomeSources)||{};return id&&a[id]?a[id].name||'':''}   // имя видно и у удалённого источника: история не теряет подпись
+function newSrcId(){return 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function saveSource(id,data){const h=S.household||(S.household={});h.incomeSources=h.incomeSources||{};const next={...(h.incomeSources[id]||{}),...data};h.incomeSources[id]=next;return DB.setHousehold({['incomeSources.'+id]:next})}
+async function addSource(name){const id=newSrcId();await saveSource(id,{name,taxable:!SRC_NOTAX.test(name),order:incomeSources().length+1,createdAt:Date.now()});return id}
+// Сколько принёс источник: за этот и прошлый месяц
+function srcIncome(id,m){return sum(S.tx.filter(t=>t.type==='income'&&!t.found&&t.src===id&&t.month===m).map(t=>+t.amount||0))}
+function openSource(x){
+  const isNew=!x; x=x||{name:'',taxable:true}; const hasTax=activeFunds().some(f=>f.kind==='percent'&&f.taxOnly);
+  openSheet(`${sheetHead(isNew?'Новый источник дохода':'Источник дохода')}
+  ${isNew?`<div class="chips">${SRC_TPL.filter(t=>!incomeSources().some(z=>z.name===t)).map(t=>`<button class="chip-btn" type="button" data-tpl="${esc(t)}">${esc(t)}</button>`).join('')}</div>`:''}
+  <div class="field"><label for="srNm">Название</label><input id="srNm" value="${esc(x.name)}" placeholder="Например, Зарплата или Ученики" ${isNew?'':'data-nofocus="1"'}></div>
+  ${hasTax?`<label class="check"><input type="checkbox" id="srTax" ${x.taxable!==false?'checked':''}> Облагается налогом</label><p class="note">При записи дохода из этого источника галочка налога встанет сама.</p>`:''}
+  <div class="err" id="srErr"></div>
+  <button class="btn primary" id="srSave">${isNew?'Добавить':'Сохранить'}</button>
+  ${isNew?'':`<button class="btn danger" id="srDel">${ic('trash')}Удалить</button><p class="note">Записанные доходы останутся с этой подписью.</p>`}`,()=>{
+    document.querySelectorAll('[data-tpl]').forEach(b=>b.addEventListener('click',()=>{$('#srNm').value=b.dataset.tpl;const t=$('#srTax');if(t)t.checked=!SRC_NOTAX.test(b.dataset.tpl)}));
+    $('#srNm').addEventListener('input',()=>{const t=$('#srTax');if(t&&isNew)t.checked=!SRC_NOTAX.test($('#srNm').value)});
+    $('#srSave').addEventListener('click',async()=>{
+      const name=$('#srNm').value.trim(); if(!name){$('#srErr').textContent='Дайте название, например «Зарплата».';return}
+      if(incomeSources().some(z=>z.id!==x.id&&z.name.toLowerCase()===name.toLowerCase())){$('#srErr').textContent='Такой источник уже есть.';return}
+      const taxable=$('#srTax')?$('#srTax').checked:!SRC_NOTAX.test(name);
+      await write(()=>isNew?saveSource(newSrcId(),{name,taxable,order:incomeSources().length+1,createdAt:Date.now()}):saveSource(x.id,{name,taxable}),isNew?'Источник добавлен':'Сохранено');
+    });
+    const del=$('#srDel'); if(del) del.addEventListener('click',()=>write(()=>saveSource(x.id,{archived:true}),'Источник удалён'));
+  });
+}
+function sourcesBlock(){
+  const L=incomeSources(), m=curMonth(), pm=shiftMonth(m,-1), mi=+m.slice(5)-1, pmi=+pm.slice(5)-1;
+  return `<section class="block"><div class="sec-head"><h2>Источники доходов</h2></div>
+  ${L.length?`<div class="list">${L.map(x=>{const a=srcIncome(x.id,m), b=srcIncome(x.id,pm);
+    return `<button class="row" data-act="edit-src" data-id="${esc(x.id)}" ${S.canWrite?'':'disabled'}><span class="row-main"><span class="name">${esc(x.name)}</span><span class="amt">${fmt(a)}</span></span><span class="note">в ${PREP[mi]} ${fmt(a)} · в ${PREP[pmi]} ${fmt(b)}${x.taxable===false?' · без налога':''}</span></button>`}).join('')}</div>`
+    :`<p class="note">Добавьте, откуда приходят деньги: зарплата, подработка, пособие. При записи дохода источник выбирается касанием, а здесь видно, сколько принёс каждый.</p>`}
+  ${S.canWrite?`<button class="btn ghost" data-act="new-src">${ic('plus')}Добавить источник</button>`:''}</section>`;
+}
 function saveAccount(id,data){
   const L=accounts(); const h=S.household||(S.household={});
   h.accounts=h.accounts||{}; const cur=h.accounts[id]||{};
@@ -1760,7 +1824,7 @@ function accSelect(id,sel,label,extra=''){
 /* вкладка «Ресурсы» */
 function renderRes(){
   const L=accounts();
-  if(!L.length) return `<section class="block"><h2>Ресурсы</h2></section><div class="empty"><h2>Где лежат ваши деньги</h2><p class="muted small">Добавьте карты, счета и наличку с остатками. Приложение подскажет, сколько и куда переложить после каждого дохода, чтобы деньги каждого фонда лежали на своём месте.</p>${S.canWrite?`<button class="btn primary" data-act="new-acc">${ic('plus')}Добавить карту или наличные</button>`:''}</div>`;
+  if(!L.length) return `<section class="block"><h2>Ресурсы</h2></section><div class="empty"><h2>Где лежат ваши деньги</h2><p class="muted small">Добавьте карты, счета и наличку с остатками. Приложение подскажет, сколько и куда переложить после каждого дохода, чтобы деньги каждого фонда лежали на своём месте.</p>${S.canWrite?`<button class="btn primary" data-act="new-acc">${ic('plus')}Добавить карту или наличные</button>`:''}</div>`+sourcesBlock();
   const R=reconcile(); S.moves=R.moves;
   let h=`<section class="hero"><div class="eyebrow">Всего денег</div><div class="fig" data-count="${R.total}">${fmt(R.total)}</div>
     <div class="hero-split"><div class="kv"><div class="k">Разложено по фондам</div><div class="v">${fmt(R.inFunds)}</div></div><div class="kv"><div class="k">${R.disc>=0?'Не разложено':'Не хватает'}</div><div class="v ${R.disc<0?'neg':''}">${fmt(Math.abs(R.disc))}</div></div></div></section>`;
@@ -1772,7 +1836,7 @@ function renderRes(){
     return `<button class="row acc" data-act="edit-acc" data-id="${esc(a.id)}" ${S.canWrite?'':'disabled'}><span class="row-main"><span class="name">${accEmoji(a)} ${esc(a.name)}</span><span class="amt">${fmt(act)}</span></span>
       <span class="note">${fs.length?`по фондам ${fmt(exp)}`+(Math.abs(d)>=1?` · <span class="${d<0?'neg':''}">${d>0?'лишние':'не хватает'} ${fmt(Math.abs(d))}</span>`:' · сходится'):'фондов здесь нет'}</span>
       ${fs.length?`<span class="acc-funds">${fs.map(x=>`<span class="chip">${esc(fundEmoji(x.f))} ${esc(x.f.name)} ${x.debt?`к внесению ${fmt(x.b)}`:fmt(x.b)}</span>`).join('')}</span>`:''}</button>`}).join('')}</div>
-    ${S.canWrite?`<button class="btn ghost" data-act="new-acc">${ic('plus')}Добавить карту или наличные</button>`:''}</section>`;
+    ${S.canWrite?`<button class="btn ghost" data-act="new-acc">${ic('plus')}Добавить карту или наличные</button>`:''}</section>`+sourcesBlock();
   const {get}=stats(), none=activeFunds().filter(f=>!fundAcc(f)&&f.kind!=='debt'&&Math.round(fstate(f,get).balance)>0).length;
   if(none) h+=`<p class="note">У ${none} ${plural(none,'фонда','фондов','фондов')} с деньгами не указано, где они лежат. Откройте карту и отметьте в «Какие фонды хранит».</p>`;
   return h;

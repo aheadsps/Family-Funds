@@ -363,6 +363,12 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .wz-eta:empty{display:none}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip-btn{border:1px dashed var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;font-size:13px;font-weight:500;color:var(--muted)}
+.src-pick .chip-btn{border-style:solid;font-size:14px;padding:8px 14px;color:var(--ink);display:inline-flex;align-items:center;gap:4px}
+.src-pick .chip-btn.tpl{border-style:dashed;color:var(--muted)}
+.src-pick .chip-btn[aria-pressed="true"]{border-style:solid;border-color:var(--accent);background:var(--accent-soft);color:var(--ink);font-weight:600}
+.src-pick .chip-btn .ic{width:16px;height:16px}
+.src-new{display:flex;gap:8px;margin-top:8px;align-items:center}
+.src-new input{flex:1;min-width:0}
 .chip-btn:hover{color:var(--accent);border-color:var(--accent)}
 .flow{display:flex;flex-direction:column;gap:2px}
 .flow-step{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 14px}
