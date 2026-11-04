@@ -12,10 +12,10 @@ const debts = block(/^const stratOf/, /^function debtSummary/);
 const eta = block(/^function etaSim/, /^function wzMetrics/);
 const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
-const pend = block(/^function debtPending/, /^function fundAcc/);
+const pend = block(/^function accounts\(\)/, /^function moveTitle/);
 const order = block(/^const FTIERS=/, /^function renderFunds/) + '\n' + block(/^function reorderGroup/, /^async function moveFund/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {reorderGroup,fundTier,debtPending,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
-const { reorderGroup, fundTier, debtPending, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
+const { reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -343,4 +343,95 @@ test('проверка планов: расчёт от всего дохода �
   assert.equal(Math.round(c.rew), 20200, '10% от 202 000');
   assert.equal(Math.round(c.free), 181800);
   assert.equal(Math.round(c.inc - c.taxAmt - c.life - c.mins - c.rew), Math.round(c.free), 'строки сходятся с итогом');
+});
+
+/* ---------- Счета и фонды: пять сценариев (деньги «где лежат» и «для чего») ---------- */
+const withCards = (funds, tx = []) => {
+  setup(funds, tx);
+  S.household = { accSince: 1, accounts: { c1: { name: 'Основная', kind: 'card', bal: 0, at: 0, order: 1 }, c2: { name: 'Вторая', kind: 'card', bal: 0, at: 0, order: 2 } } };
+};
+const cardSum = () => Object.values(accBalances()).reduce((a, b) => a + b, 0);
+const fundSum = () => { const { get } = stats(); return S.funds.filter(f => f.kind !== 'debt').reduce((a, f) => a + fstate(f, get).balance, 0); };
+const pendSum = () => Object.values(debtPending()).reduce((a, b) => a + b, 0);
+const dKredit = { id: 'dk', name: 'Кредит', kind: 'debt', value: 100000, minPay: 20 };
+const rent = { id: 'rent', name: 'Жильё', kind: 'monthly', value: 40 };
+const food100 = { id: 'food', name: 'Продукты', kind: 'monthly', value: 30 };
+const income100 = { id: 'i1', type: 'income', amount: 100, acc: 'c1', alloc: { food: 30, rent: 40, dk: 20, rest: 10 }, date: day, month: m, createdAt: 2 };
+// контрольное равенство: деньги на картах = деньги в фондах + отложенное на долги
+const balanced = () => { assert.equal(cardSum(), fundSum() + pendSum()); assert.equal(reconcile().disc, 0); };
+
+test('сценарий 1: доход 100 ₽ лёг на карту и разошёлся по фондам', () => {
+  withCards([food100, rent, dKredit, rest], [income100]);
+  assert.equal(accBalances().c1, 100);
+  assert.equal(fundSum(), 80);
+  assert.equal(debtPending().dk, 20);
+  balanced();
+});
+
+test('сценарий 2: перевод 30 ₽ между картами не меняет фонды', () => {
+  withCards([food100, rent, dKredit, rest], [income100]);
+  const before = fundSum();
+  S.tx.push({ id: 'mv', type: 'move', from: 'c1', to: 'c2', debt: '', amount: 30, date: day, month: m, createdAt: 3 });
+  assert.equal(accBalances().c1, 70); assert.equal(accBalances().c2, 30);
+  assert.equal(cardSum(), 100); assert.equal(fundSum(), before);
+  balanced();
+});
+
+test('сценарий 3: покупка на 20 ₽ уменьшает и карту, и фонд продуктов', () => {
+  withCards([food100, rent, dKredit, rest], [income100]);
+  S.tx.push({ id: 'e', type: 'expense', amount: 20, fundId: 'food', from: 'food', acc: 'c1', date: day, month: m, createdAt: 3 });
+  const { get } = stats();
+  assert.equal(accBalances().c1, 80);
+  assert.equal(fstate(food100, get).balance, 10);
+  balanced();
+});
+
+test('сценарий 4: перераспределение 15 ₽ между фондами не трогает карты', () => {
+  withCards([food100, rent, dKredit, rest], [income100]);
+  S.tx.push({ id: 'tr', type: 'transfer', from: 'rent', amount: 15, alloc: { food: 15 }, date: day, month: m, createdAt: 3 });
+  const { get } = stats();
+  assert.equal(cardSum(), 100); assert.equal(fundSum(), 80);
+  assert.equal(fstate(rent, get).balance, 25); assert.equal(fstate(food100, get).balance, 45);
+  balanced();
+});
+
+test('сценарий 5: отложенное на долг не уменьшает долг перед банком, «Внёс» уменьшает', () => {
+  const debt = { id: 'dk', name: 'Кредит', kind: 'debt', value: 100000, minPay: 10000 };
+  withCards([debt, rest], [{ id: 'i', type: 'income', amount: 50000, acc: 'c1', alloc: { dk: 10000, rest: 40000 }, date: day, month: m, createdAt: 2 }]);
+  let s = fstate(debt, stats().get), b = debtBank(debt, s, debtPending());
+  assert.equal(s.remaining, 90000);            // осталось отложить: по нему фонд получает деньги
+  assert.deepEqual(b, { inBank: 0, aside: 10000, owed: 100000 });
+  balanced();
+  S.tx.push({ id: 'p', type: 'move', from: 'c1', to: '', debt: 'dk', amount: 10000, date: day, month: m, createdAt: 3 });
+  s = fstate(debt, stats().get); b = debtBank(debt, s, debtPending());
+  assert.equal(s.remaining, 90000);            // платёж не засчитывается второй раз
+  assert.deepEqual(b, { inBank: 10000, aside: 0, owed: 90000 });
+  assert.equal(accBalances().c1, 40000);
+  balanced();
+});
+
+test('долг полностью отложен, но не внесён: он ещё открыт, а доходы его больше не пополняют', () => {
+  const debt = { id: 'dk', name: 'Рассрочка', kind: 'debt', value: 30000 };
+  withCards([debt, rest], [{ id: 'i', type: 'income', amount: 50000, acc: 'c1', alloc: { dk: 30000, rest: 20000 }, date: day, month: m, createdAt: 2 }]);
+  const s = fstate(debt, stats().get), b = debtBank(debt, s, debtPending());
+  assert.equal(s.remaining, 0);
+  assert.equal(b.owed, 30000);
+  assert.equal(distribute(10000, true).rows.find(r => r.f.id === 'dk').give, 0);
+});
+
+test('платёж по долгу тратой из другого фонда сразу уменьшает долг перед банком', () => {
+  const debt = { id: 'dk', name: 'Кредит', kind: 'debt', value: 100000, minPay: 10000 };
+  withCards([debt, rest], [
+    { id: 'i', type: 'income', amount: 50000, acc: 'c1', alloc: { rest: 50000 }, date: day, month: m, createdAt: 2 },
+    { id: 'e', type: 'expense', amount: 10000, fundId: 'dk', from: 'rest', acc: 'c1', date: day, month: m, createdAt: 3 }]);
+  const s = fstate(debt, stats().get);
+  assert.deepEqual(debtBank(debt, s, debtPending()), { inBank: 10000, aside: 0, owed: 90000 });
+  balanced();
+});
+
+test('без учёта карт остаток долга считается как раньше', () => {
+  const debt = { id: 'dk', name: 'Кредит', kind: 'debt', value: 100000, minPay: 10000 };
+  setup([debt, rest], [{ id: 'i', type: 'income', amount: 50000, alloc: { dk: 10000, rest: 40000 }, date: day, month: m, createdAt: 2 }]);
+  const s = fstate(debt, stats().get);
+  assert.equal(debtBank(debt, s, debtPending()).owed, s.remaining);
 });

@@ -540,7 +540,7 @@ function fundRowNow(f,get,mi){
   else if(f.kind==='goal'){const used=Math.max(0,s.collected-s.balance);pc=v?s.collected/v:0;right=`${fmt(s.collected)} из ${fmt(v)}`;
     sub=(f.isDebt?'на долг · ':'')+(s.left>0.5?`осталось накопить ${fmt(s.left)}`:f.isDebt?'накоплено, внесите платёж':'накоплено')+(s.left>0.5&&+f.pct?` · ${nf2.format(+f.pct)}% с дохода`:'')+(used>0.5?` · в фонде ${fmt(s.balance)}, потрачено ${fmt(used)}`:'')+(s.left>0.5&&+f.cap?` · по ${fmt(f.cap)} в месяц`:'')+(s.left>0.5&&f.deadline?` · до ${dateLabel(f.deadline)}`:'')}
   else if(f.kind==='reward'){right=`<span class="${s.balance<0?'neg':''}">${fmt(s.balance)}</span>`;sub=`${nf.format(v)}% от денег сверх обязательных платежей · на покупки для себя`}
-  else if(f.kind==='debt'){pc=v?s.paid/v:1;right=s.remaining>0?`осталось ${fmt(s.remaining)}`:'закрыт';sub=`погашено ${fmt(s.paid)} из ${fmt(v)}`+(+f.rate?` · ${nf2.format(+f.rate)}% годовых`:'')+(+f.pct?` · ${nf2.format(+f.pct)}% с дохода`:'')+(f.deadline?` · до ${dateLabel(f.deadline)}`:'')}
+  else if(f.kind==='debt'){const b=debtBank(f,s,debtPending());pc=v?b.inBank/v:1;right=b.owed>0.5?`осталось ${fmt(b.owed)}`:'закрыт';sub=`погашено ${fmt(b.inBank)} из ${fmt(v)}`+(b.aside>0.5?` · отложено ${fmt(b.aside)}, ждёт «Внёс»`:'')+(+f.rate?` · ${nf2.format(+f.rate)}% годовых`:'')+(+f.pct?` · ${nf2.format(+f.pct)}% с дохода`:'')+(f.deadline?` · до ${dateLabel(f.deadline)}`:'')}
   else if(f.kind==='percent'){right=`<span class="${s.balance<0?'neg':''}">${fmt(s.balance)}</span>`;sub=`${nf.format(v)}% ${f.taxOnly?'с облагаемых доходов':'с каждого дохода'}`}
   else {right=`<span class="${s.balance<0?'neg':''}">${fmt(s.balance)}</span>`;sub='получает всё, что осталось'}
   return `<button class="frow k-${f.kind}" data-act="edit-fund" data-id="${esc(f.id)}" ${S.canWrite?'':'disabled'}>${fundIcon(f)}<span class="fb"><span class="row-main"><span class="name">${esc(f.name)}</span><span class="amt">${right}</span></span>${pc!==null?`<span class="bar"><i style="width:${Math.max(0,Math.min(100,pc*100)).toFixed(1)}%"></i></span>`:''}<span class="note">${sub}</span></span></button>`;
@@ -568,11 +568,12 @@ function renderFunds(){
   const funds=activeFunds();
   let h='';
   if(!funds.length) return `<section class="block"><h2>Фонды</h2></section>`+emptyFunds();
-  const {get}=stats();
+  const {get}=stats(), pend=debtPending();
   const row=(f,i,n,canDrag)=>{
     const s=fstate(f,get), v=+f.value||0;
     const val=f.kind==='percent'||f.kind==='reward'?`${nf.format(v)}%`:f.kind==='rest'?'':fmt(v)+(f.kind==='monthly'?' в месяц':'')+(+f.cap?` · по ${fmt(f.cap)} в месяц`:'')+(+f.minPay?` · платёж ${fmt(f.minPay)}`:'')+(+f.pct?` · ${nf2.format(+f.pct)}% с дохода`:'');
-    const st=[f.kind==='debt'?`осталось ${fmt(s.remaining)}`:f.kind==='goal'?`накоплено ${fmt(s.collected)}`+(s.collected-s.balance>0.5?`, в фонде ${fmt(s.balance)}`:''):`в фонде ${fmt(s.balance)}`];
+    const db=f.kind==='debt'?debtBank(f,s,pend):null;
+    const st=[f.kind==='debt'?`осталось ${fmt(db.owed)}`+(db.aside>0.5?`, отложено ${fmt(db.aside)}`:''):f.kind==='goal'?`накоплено ${fmt(s.collected)}`+(s.collected-s.balance>0.5?`, в фонде ${fmt(s.balance)}`:''):`в фонде ${fmt(s.balance)}`];
     if(f.deadline) st.push(`до ${dateLabel(f.deadline)}`);
     if(+f.payDay) st.push(`платёж ${Math.round(+f.payDay)}‑го`);
     if(f.kind==='debt'&&+f.rate) st.push(`${nf2.format(+f.rate)}%`);
@@ -634,17 +635,18 @@ function debtPlan(){
   return h;
 }
 function debtRow(d,i,r){
-  const s=fstate(d.f,stats().get), v=+d.f.value||0, pc=v?s.paid/v:1;
+  const s=fstate(d.f,stats().get), v=+d.f.value||0, b=debtBank(d.f,s,debtPending()), pc=v?b.inBank/v:1;
   const parts=[];
-  if(d.bal<=0.5) parts.push('закрыт');
+  if(d.bal<=0.5) parts.push(b.aside>0.5?`всё отложено, внесите ${fmt(b.aside)}`:'закрыт');
   else{
     parts.push(d.rate>0?`${nf2.format(d.rate)}% годовых`:d.f.rateSet?'без процентов':'<span class="chip v-warn">укажите ставку</span>');
     if(d.min>0) parts.push(`мин. ${fmt(d.min)}`);
     if(+d.f.pct) parts.push(`${nf2.format(+d.f.pct)}% с дохода`);
     if(+d.f.payDay) parts.push(`платёж ${Math.round(+d.f.payDay)}‑го`);
     if(r&&r.at&&r.at[d.f.id]&&!r.stuck) parts.push(`закроется ${monthIn(r.at[d.f.id])}`);
+    if(b.aside>0.5) parts.push(`отложено ${fmt(b.aside)}`);
   }
-  return `<button class="frow k-debt" data-act="edit-fund" data-id="${esc(d.f.id)}" ${S.canWrite?'':'disabled'}>${fundIcon(d.f)}<span class="fb"><span class="row-main"><span class="name">${i>=0?`${i+1}. `:''}${esc(d.f.name)}</span><span class="amt">${d.bal>0.5?fmt(d.bal):'0 ₽'}</span></span><span class="bar"><i style="width:${Math.max(0,Math.min(100,pc*100)).toFixed(1)}%"></i></span><span class="note">${parts.join(' · ')}</span></span></button>`;
+  return `<button class="frow k-debt" data-act="edit-fund" data-id="${esc(d.f.id)}" ${S.canWrite?'':'disabled'}>${fundIcon(d.f)}<span class="fb"><span class="row-main"><span class="name">${i>=0?`${i+1}. `:''}${esc(d.f.name)}</span><span class="amt">${b.owed>0.5?fmt(b.owed):'0 ₽'}</span></span><span class="bar"><i style="width:${Math.max(0,Math.min(100,pc*100)).toFixed(1)}%"></i></span><span class="note">${parts.join(' · ')}</span></span></button>`;
 }
 
 /* ---------- вкладка «История» ---------- */
@@ -876,7 +878,7 @@ function openExpense(tx,preset){
       if(src){const after=src.bal-(a-cv);lines.push(`«${esc(src.name)}»: было ${fmt(src.bal)}, станет <span class="${after<-0.5?'neg':''}">${fmt(after)}</span>.`)}
       if(srcId!==cat.id){
         const s=fstate(cat,get);
-        if(cat.kind==='debt') lines.push(`«${esc(cat.name)}»: остаток долга станет ${fmt(Math.max(0,s.remaining-a))}.`);
+        if(cat.kind==='debt') lines.push(`«${esc(cat.name)}»: остаток долга станет ${fmt(Math.max(0,debtBank(cat,s,debtPending()).owed-a))}.`);
         else if(cat.kind==='monthly') lines.push(`«${esc(cat.name)}»: трата засчитается, на месяц будет покрыто ${fmt(Math.min(+cat.value||0,(+cat.value||0)-s.need+a))} из ${fmt(cat.value)}.`);
         else lines.push(`Трата засчитается в «${esc(cat.name)}».`);
       }
@@ -939,7 +941,9 @@ function openFund(f,kindPreset){
   const {get}=stats(); const s=isNew?{balance:0,remaining:0,moved:0,paid:0}:fstate(f,get);
   const st0=isNew?{rule:'monthly',debt:kindPreset==='debt',accum:kindPreset==='goal',reward:false}:fundShape(f);
   const isReward=st0.reward;
-  const cur=f.kind==='debt'?s.remaining:s.balance;
+  // у долга в поле «Сколько осталось погасить» реальный остаток перед банком: отложенное, но не внесённое, его не уменьшает
+  const db=!isNew&&f.kind==='debt'?debtBank(f,s,debtPending()):null;
+  const cur=db?db.owed:s.balance;
   const amt0=f.kind==='goal'?f.cap:f.kind==='debt'?f.minPay:f.kind==='monthly'?f.value:0;
   const pct0=f.kind==='percent'||f.kind==='reward'?f.value:f.pct;
   const tgt0=f.kind==='goal'?f.value:0;
@@ -1041,7 +1045,7 @@ function openFund(f,kindPreset){
       if(kind==='debt'&&(rate<0||rate>200)) return err('Ставка выглядит странно: укажите процент годовых, например 29,9.');
       const data={accountId:$('#fAcc')?$('#fAcc').value:(f.accountId||''),name,icon,
         ...fundFields({rule,debt,accum,reward:isReward},{amt,pct,tgt,day,rate,rateSet:$('#fRate').value.trim()!=='',tax:$('#fTax').checked,dl:$('#fDl').value})};
-      const moved=isNew?0:(s.moved||0); const paid=isNew?0:(s.paid||0);
+      const moved=isNew?0:(s.moved||0); const paid=isNew?0:(db?db.inBank:(s.paid||0));
       if(kind==='debt'){data.value=Math.round(curIn+paid);data.start=0}
       else data.start=Math.round(curIn-moved);
       await write(async()=>{
@@ -1342,10 +1346,10 @@ async function applyStrategy(strat){
 let celeQ=[], celeOn=false;
 function checkCelebrations(){
   if(!S.hid||S.status!=='ready') return;
-  const {get}=stats(); const initKey='ff-cel-init:'+S.hid; const first=!LS.get(initKey);
+  const {get}=stats(), pend=debtPending(); const initKey='ff-cel-init:'+S.hid; const first=!LS.get(initKey);
   for(const f of activeFunds()){
     const v=+f.value||0; if(!(v>0)) continue;
-    const hit=(f.kind==='debt'&&fstate(f,get).remaining<=0.5)||(f.kind==='goal'&&!f.wishId&&fstate(f,get).collected>=v-0.5);
+    const hit=(f.kind==='debt'&&debtBank(f,fstate(f,get),pend).owed<=0.5)||(f.kind==='goal'&&!f.wishId&&fstate(f,get).collected>=v-0.5);
     if(!hit) continue;
     const k='ff-cel:'+S.hid+':'+f.id; if(LS.get(k)) continue; LS.set(k,'1');
     if(!first&&!celeQ.includes(f.id)) celeQ.push(f.id);
@@ -1544,6 +1548,13 @@ function debtPending(){
   }
   for(const k in p) if(p[k]<0.5) delete p[k];
   return p;
+}
+// Долг в двух величинах. fstate().remaining это «осталось отложить» (по нему фонд получает деньги из доходов),
+// а owed это настоящий остаток перед банком: отложенное, но не внесённое (aside) его не уменьшает.
+// Без учёта карт (нет accSince) aside всегда 0, и owed совпадает с remaining.
+function debtBank(f,s,pend){
+  const v=+f.value||0, aside=Math.max(0,Math.min(s.paid,Math.round((pend||{})[f.id]||0))), inBank=s.paid-aside;
+  return {inBank,aside,owed:Math.max(0,v-inBank)};
 }
 function fundAcc(f){const id=f&&f.accountId;return id&&accById(id)?id:''}
 function reconcile(){
