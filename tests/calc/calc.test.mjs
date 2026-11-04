@@ -14,8 +14,8 @@ const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
 const pend = block(/^function accounts\(\)/, /^function moveTitle/);
 const order = block(/^const FTIERS=/, /^function renderFunds/) + '\n' + block(/^function reorderGroup/, /^async function moveFund/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
-const { reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
+const { paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -434,4 +434,74 @@ test('без учёта карт остаток долга считается к
   setup([debt, rest], [{ id: 'i', type: 'income', amount: 50000, alloc: { dk: 10000, rest: 40000 }, date: day, month: m, createdAt: 2 }]);
   const s = fstate(debt, stats().get);
   assert.equal(debtBank(debt, s, debtPending()).owed, s.remaining);
+});
+
+/* ---------- пауза фонда на месяц ---------- */
+const pool = () => ({ id: 'pool', name: 'Бассейн Мии', kind: 'monthly', value: 6000, payDay: 15 });
+const flat = { id: 'flat', name: 'Ипотека', kind: 'monthly', value: 40000 };
+const card = { id: 'cc', name: 'Кредитка', kind: 'debt', value: 200000, minPay: 5000, rate: 30 };
+
+test('фонд на паузе в этом месяце не получает деньги, они идут дальше по очереди', () => {
+  setup([flat, { ...pool(), pausedM: m }, card, rest]);
+  const d = distribute(60000, true);
+  assert.equal(give(d, 'pool'), 0);
+  assert.equal(give(d, 'flat'), 40000);
+  assert.equal(give(d, 'cc'), 20000);          // 5 000 минимальный платёж и 15 000 досрочно, вместе с деньгами бассейна
+  assert.ok(upcoming(31).every(x => x.f.id !== 'pool'));
+});
+
+test('пауза прошлого месяца больше не действует', () => {
+  setup([flat, { ...pool(), pausedM: shiftMonth(m, -1) }, card, rest]);
+  assert.equal(paused(S.funds[1]), false);
+  assert.equal(give(distribute(60000, true), 'pool'), 6000);
+});
+
+test('на паузу не ставятся долги и налог, а % с дохода на паузе не берёт процент', () => {
+  setup([{ ...tax, taxOnly: true, pausedM: m }, { ...card, pausedM: m }, { id: 'inv', name: 'Инвестиции', kind: 'percent', value: 10, pausedM: m }, rest]);
+  assert.equal(paused(S.funds[0]), false);
+  assert.equal(paused(S.funds[1]), false);
+  const d = distribute(100000, true);
+  assert.equal(give(d, 'tax'), 6000);
+  assert.equal(give(d, 'inv'), 0);
+});
+
+test('фонд на паузе, ушедший в минус, всё равно закрывает минус следующим доходом', () => {
+  setup([{ ...pool(), pausedM: m }, rest], [{ id: 'e', type: 'expense', amount: 2000, fundId: 'pool', from: 'pool', date: day, month: m, createdAt: 1 }]);
+  assert.equal(give(distribute(10000, true), 'pool'), 2000);
+});
+
+test('подсказка: что сократить ради долгов', () => {
+  setup([flat, { id: 'food', name: 'Еда', kind: 'monthly', value: 50000 }, pool(), card, rest]);
+  let t = cutTip(monthPicture());
+  assert.ok(t && t.title.includes('Бассейн Мии'));
+  assert.equal(t.act.act, 'pause-fund');
+  assert.ok(t.text.includes('Кредитка'));
+  setup([flat, { ...pool(), noCut: true }, card, rest]);
+  assert.equal(cutTip(monthPicture()), null);
+  setup([flat, pool(), card, rest], [{ id: 'e', type: 'expense', amount: 6000, fundId: 'pool', from: 'pool', date: day, month: m, createdAt: 1 }]);
+  assert.equal(cutTip(monthPicture()), null);   // за бассейн в этом месяце уже заплатили
+  setup([flat, pool(), rest]);
+  assert.equal(cutTip(monthPicture()), null);   // долгов нет, сокращать незачем
+});
+
+/* ---------- обычный доход по опыту ---------- */
+const inc = (mm, a, extra = {}) => ({ id: 'i' + mm + a, type: 'income', amount: a, alloc: {}, date: mm + '-05', month: mm, createdAt: 1, ...extra });
+
+test('доход по опыту: средний за полные месяцы, первый неполный месяц и стартовые остатки не считаются', () => {
+  const m1 = shiftMonth(m, -1), m2 = shiftMonth(m, -2), m3 = shiftMonth(m, -3);
+  setup([rest], [inc(m3, 50000), inc(m3, 900000, { found: true }), inc(m2, 200000), inc(m1, 300000), inc(m, 10000)]);
+  S.household = { expectedIncome: 400000 };
+  const B = incomeBasis();
+  assert.equal(B.src, 'hist');
+  assert.equal(B.inc, 250000);
+  assert.deepEqual(B.h.map(x => x.m), [m1, m2]);
+});
+
+test('пока полных месяцев меньше двух, берётся доход из настроек', () => {
+  const m1 = shiftMonth(m, -1), m2 = shiftMonth(m, -2);
+  setup([rest], [inc(m2, 50000), inc(m1, 300000)]);
+  S.household = { expectedIncome: 400000 };
+  assert.deepEqual([incomeBasis().src, incomeBasis().inc], ['set', 400000]);
+  S.household = {};
+  assert.deepEqual([incomeBasis().src, incomeBasis().inc], ['hist', 300000]);
 });

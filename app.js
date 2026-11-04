@@ -56,7 +56,11 @@ function fundName(id){if(id==='_free')return 'Без фонда';const f=S.funds
    Фонд-цель помнит, сколько в него накопили (collected), и отдельно, сколько в нём лежит (balance).
    Траты уменьшают balance, но не collected: цель не просит докладывать потраченное. */
 // Процент с дохода: фонд «% с дохода», а также цель или долг, у которых правило «процент» (поле pct)
-const pctRate=f=>f.kind==='percent'?(+f.value||0):((f.kind==='goal'||f.kind==='debt')&&+f.pct>0?+f.pct:0);
+// Пауза на месяц (pausedM = 'ГГГГ-ММ'): в этом месяце фонд не берёт деньги из доходов и не просит платёж, со следующего всё как раньше.
+// Только расходы и накопления: долги (банк ждёт платёж), налог, награды и «остаток» на паузу не ставятся
+const canPause=f=>!!f&&(f.kind==='monthly'||f.kind==='goal'&&!f.isDebt||f.kind==='percent'&&!f.taxOnly);
+function paused(f){return canPause(f)&&!!f.pausedM&&f.pausedM===curMonth()}
+const pctRate=f=>paused(f)?0:f.kind==='percent'?(+f.value||0):((f.kind==='goal'||f.kind==='debt')&&+f.pct>0?+f.pct:0);
 const G0=()=>({alloc:0,allocM:0,spent:0,spentM:0,thru:0});
 function coverOf(t){const amt=+t.amount||0;return t.cover&&t.cover.fid&&+t.cover.amt>0?Math.min(amt,Math.round(+t.cover.amt)):0}
 function stats(skip){
@@ -101,6 +105,7 @@ function fstate(f,get){
   let need=0;
   if(f.kind==='monthly') need=Math.max(0,v-s.spentM-balance,-balance);
   else if(f.kind==='goal'){need=left;if(+f.cap>0)need=Math.min(need,Math.max(0,+f.cap-s.allocM))}
+  if(paused(f)) need=f.kind==='monthly'?Math.max(0,-balance):0;   // на паузе: только закрыть минус, если ушли в него
   return {balance,collected,left,need,spentM:s.spentM,allocM:s.allocM,moved:s.alloc-s.spent};
 }
 function monthsLeft(deadline){
@@ -187,7 +192,7 @@ function distribute(amount,taxable,o={}){
   for(const f of funds){
     if(rem<=0) break;
     if(f.kind!=='debt'&&f.kind!=='goal') continue;
-    if(+f.pct>0) continue;   // с правилом «процент» фонд берёт только свой процент
+    if(+f.pct>0||paused(f)) continue;   // с правилом «процент» фонд берёт только свой процент; на паузе ничего
     const s=fstate(f,get); const top=f.kind==='debt'?s.remaining:(+f.cap>0?s.need:s.left);
     const g=Math.max(0,Math.min(rem,Math.round(top-give[f.id]))); give[f.id]+=g; rem-=g;
   }
@@ -267,7 +272,7 @@ function monthPicture(){
   // «ядро»: жизнь и минимальные платежи по долгам; планы: сроки и взносы в цели
   const coreNet=sum(funds.map(f=>f.kind==='monthly'?monthReq(f,get):f.kind==='debt'?reqParts(f,get).base:0)), planNet=Math.max(0,stillNet-coreNet);
   const gr=x=>pct<100?x/(1-pct/100):x, coreGross=gr(coreNet), planGross=gr(planNet);
-  const coreTotal=sum(funds.map(f=>{if(f.kind==='monthly')return +f.value||0;if(f.kind!=='debt')return 0;const s=fstate(f,get);return Math.min(+f.minPay||0,s.remaining+s.allocM)}));
+  const coreTotal=sum(funds.map(f=>{if(f.kind==='monthly')return paused(f)?0:+f.value||0;if(f.kind!=='debt')return 0;const s=fstate(f,get);return Math.min(+f.minPay||0,s.remaining+s.allocM)}));
   const coreProgress=coreTotal>0?Math.max(0,Math.min(1,(coreTotal-coreNet)/coreTotal)):null;
   const free=fstate({id:'_free',kind:'goal',value:0},get).balance;
   const planned=sum(funds.map(f=>monthPlanned(f,get)));
@@ -321,7 +326,24 @@ function tips(P){
   if(noMin.length) out.push({tone:'info',title:`Укажите платёж в месяц по «${noMin[0].name}»`,text:'Без него долг гасится только деньгами сверх обязательного, и в месяц с маленьким доходом платёж может не набраться. С ним каждый доход откладывает на долг понемногу, сразу после еды и квартиры.',act:{label:'Открыть',act:'edit-fund',id:noMin[0].id}});
   const monthlyNoDay=funds.filter(f=>f.kind==='monthly'&&!(+f.payDay));
   if(monthlyNoDay.length&&monthlyNoDay.length===funds.filter(f=>f.kind==='monthly').length) out.push({tone:'info',title:'Укажите дни платежей',text:'Откройте ежемесячный фонд и впишите день оплаты. На главной появятся ближайшие платежи, а напоминания можно добавить в календарь телефона.',act:{label:'Открыть фонды',act:'go-funds'}});
+  const cut=cutTip(P); if(cut) out.push(cut);
   return out;
+}
+/* Что можно временно сократить, чтобы быстрее закрыть долги: самый крупный «платёж в месяц», который не похож
+   на обязательный расход и в этом месяце ещё не оплачен. Пауза на месяц отдаёт его деньги очереди долгов и целей */
+const ESSENTIAL=/квартир|аренд|ипотек|коммун|жкх|свет|электр|газ|вод[аы]|отоплен|ед[аы]\b|еда|продукт|питани|связь|интернет|телефон|мобил|кредит|долг|рассрочк|займ|налог|лекарств|аптек|врач|медиц|страхов|сад\b|садик|школ|транспорт|бензин|топлив|проезд|алимент/i;
+function cutTip(P){
+  const {get,funds,mi}=P; if(!S.canWrite) return null;
+  const debt=funds.find(f=>f.kind==='debt'&&fstate(f,get).remaining>0.5); if(!debt) return null;
+  const c=funds.filter(f=>f.kind==='monthly'&&!paused(f)&&!f.noCut&&(+f.value||0)>0&&!ESSENTIAL.test(f.name||'')&&fstate(f,get).spentM<0.5)
+    .sort((a,b)=>(+b.value||0)-(+a.value||0))[0];
+  if(!c) return null;
+  // куда пойдут деньги: первый в очереди долгов и целей, кто ещё берёт деньги сверх обязательного
+  const q=funds.find(f=>(f.kind==='debt'||f.kind==='goal')&&!(+f.pct>0)&&!paused(f)&&leftOf(f,get)>0.5)||debt;
+  const v=+c.value||0, F=monthFlow(P), days=F.free>0?Math.max(1,Math.round(v/F.free*30.4)):0, isD=q.kind==='debt';
+  return {tone:'info',title:`Можно сократить «${c.name}»`,
+    text:`Пауза в ${PREP[mi]} отдаст ${fmt(v)} в «${q.name}»`+(days?`: ${isD?'долг закроется':'цель накопится'} примерно на ${daysWord(days)} раньше.`:'.')+' Со следующего месяца фонд снова получает деньги.',
+    act:{label:`Пауза на ${NOM[mi].toLowerCase()}`,act:'pause-fund',id:c.id},act2:{label:'Не предлагать',act:'nocut-fund',id:c.id}};
 }
 /* ---------- «Хочу купить»: варианты по формуле ---------- */
 const BONUS_PCT = 5;          // награда за закрытый долг: % от суммы долга
@@ -332,12 +354,31 @@ const monthsWord=m=>`${m} ${plural(m,'месяц','месяца','месяцев
 function monthIn(k){const m=shiftMonth(curMonth(),k);const [y,mm]=m.split('-').map(Number);return `в ${PREP[mm-1]}${y!==new Date().getFullYear()?' '+y:''}`}
 const round500=x=>Math.max(500,Math.round(x/500)*500);
 
-// Обычный доход в месяц: из настроек семьи, иначе средний за прошлые 2 месяца
-function usualIncome(){
-  const e=+(S.household&&S.household.expectedIncome)||0; if(e>0) return e;
-  const ms=[shiftMonth(curMonth(),-1),shiftMonth(curMonth(),-2)]; const by={};
-  for(const t of S.tx) if(t.type==='income'&&ms.includes(t.month)) by[t.month]=(by[t.month]||0)+(+t.amount||0);
-  const v=Object.values(by).filter(x=>x>0); return v.length?sum(v)/v.length:0;
+// Опыт: доход за последние полные месяцы. Первый месяц с записями неполный (начали вести учёт посреди месяца), его не считаем.
+// Стартовые остатки («нашли деньги», found) доходом не считаются
+function incomeHistory(n=3){
+  const cm=curMonth(); let first=cm; const by={};
+  for(const t of S.tx){ if(t.month&&t.month<first) first=t.month;
+    if(t.type==='income'&&!t.found&&t.month<cm) by[t.month]=(by[t.month]||0)+(+t.amount||0); }
+  const out=[]; for(let k=1;k<=n;k++){const m=shiftMonth(cm,-k); if(m<=first) break; out.push({m,v:by[m]||0})}
+  return out;
+}
+// Обычный доход в месяц. Когда есть хотя бы два полных месяца истории, берём средний по факту (до трёх месяцев):
+// приложение учится на том, сколько семья реально зарабатывает. Иначе сумма из настроек семьи, иначе единственный полный месяц
+function incomeBasis(){
+  const h=incomeHistory(3), e=+(S.household&&S.household.expectedIncome)||0;
+  const avg=h.length?sum(h.map(x=>x.v))/h.length:0;
+  if(h.length>=2&&avg>0) return {inc:Math.round(avg),src:'hist',h,e};
+  if(e>0) return {inc:e,src:'set',h,e};
+  if(h.length&&avg>0) return {inc:Math.round(avg),src:'hist',h,e};
+  return {inc:0,src:'none',h,e};
+}
+function usualIncome(){return incomeBasis().inc}
+// Короткое объяснение, откуда приложение берёт обычный доход: для меню «Семья» и окна «Из чего складывается»
+function incomeNote(){
+  const B=incomeBasis(), mon=B.h.map(x=>`${NOM[+x.m.slice(5)-1].toLowerCase()} ${fmt(x.v)}`).join(', ');
+  if(B.src==='hist') return `Расчёты учатся на опыте: средний доход за ${B.h.length} ${plural(B.h.length,'последний месяц','последних месяца','последних месяцев')} ${fmt(B.inc)} (${mon}). По нему считаются сроки, прогнозы покупок и подсказки.`+(B.e>0&&Math.abs(B.e-B.inc)>=1000?` Сумма в поле работает как запасная, когда истории меньше двух месяцев.`:'');
+  return `По этой сумме считаются сроки, прогнозы покупок и подсказки. Когда наберётся два полных месяца записей, приложение начнёт брать средний доход по факту.`+(mon?` Пока есть: ${mon}.`:'');
 }
 // Деньги сверх обязательных платежей в обычный месяц: до фонда наград и после него
 function monthFlow(P){
@@ -457,8 +498,9 @@ function render(){
   else if(S.tab==='res') html+=renderRes();
   else html+=renderHist();
   main.innerHTML=html; main.dataset.view=S.tab;
-  main.classList.remove('enter');
-  if(S.enterNext){S.enterNext=false;void main.offsetWidth;main.classList.add('enter');countUp(main)}
+  main.classList.remove('enter','sw-next','sw-prev');
+  if(S.enterNext){S.enterNext=false;void main.offsetWidth;main.classList.add('enter');if(S.histDir)main.classList.add(S.histDir>0?'sw-next':'sw-prev');countUp(main)}
+  S.histDir=0;
   moveTabInd();
   resolveNames();
   if(S.sheetRefresh&&!$('#sheet').hidden)S.sheetRefresh();
@@ -505,6 +547,12 @@ function ringSvg(p,done){
   const r=36,c=2*Math.PI*r,off=c*(1-p);
   return `<div class="ring" role="img" aria-label="План месяца выполнен на ${Math.round(p*100)}%"><svg viewBox="0 0 84 84" aria-hidden="true"><circle class="track" cx="42" cy="42" r="${r}" fill="none" stroke-width="8"/><circle class="val" cx="42" cy="42" r="${r}" fill="none" stroke-width="8" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}" data-off="${off.toFixed(2)}"/></svg><b>${done?ic('check'):Math.round(p*100)+'%'}</b></div>`;
 }
+const tipBtn=(a,cls='ghost')=>a&&(S.canWrite||a.act==='go-funds')?`<button class="btn sm ${cls}" data-act="${a.act}" ${a.id?`data-id="${esc(a.id)}"`:''}>${esc(a.label)}</button>`:'';
+function tipCard(t){const b=tipBtn(t.act)+tipBtn(t.act2);return `<div class="tip ${t.tone}"><span class="dot"></span><div><b>${esc(t.title)}</b><span class="muted small">${esc(t.text)}</span>${b?`<div class="opt-act">${b}</div>`:''}</div></div>`}
+// Сколько заработали в прошлом месяце: видно на главной рядом с текущим, если тот месяц уже был в учёте
+function lastIncomeKv(){const m=shiftMonth(curMonth(),-1); if(!S.tx.some(t=>t.month===m)) return '';
+  const v=sum(S.tx.filter(t=>t.type==='income'&&!t.found&&t.month===m).map(t=>+t.amount||0));
+  return `<div class="kv"><div class="k">Доход в ${PREP[+m.slice(5)-1]}</div><div class="v muted">${fmt(v)}</div></div>`}
 function renderNow(){
   if(!activeFunds().length) return emptyFunds();
   const P=monthPicture(); const mi=P.mi; const core=P.coreNet>0.5, plans=P.planNet>0.5;
@@ -520,7 +568,7 @@ function renderNow(){
   } else {
     h+=`<div class="eyebrow">${NOM[mi]}</div><div class="fig ok">План месяца выполнен</div><div class="note">Дальше доход пойдёт на награды, долги и цели по очереди фондов, остаток в накопления.</div>`;
   }
-  h+=`</div></div><div class="hero-split"><div class="kv"><div class="k">Доход в ${PREP[mi]}</div><div class="v">${fmt(P.incomeM)}</div></div><div class="kv"><div class="k">Траты в ${PREP[mi]}</div><div class="v">${fmt(P.spentM)}</div></div></div></section>`;
+  h+=`</div></div><div class="hero-split"><div class="kv"><div class="k">Доход в ${PREP[mi]}</div><div class="v">${fmt(P.incomeM)}</div></div><div class="kv"><div class="k">Траты в ${PREP[mi]}</div><div class="v">${fmt(P.spentM)}</div></div>${lastIncomeKv()}</div></section>`;
   const dsum=debtSummary();
   if(dsum) h+=`<button class="goal-chip" data-tab-go="debts"><span class="gi">${ic('trending-down')}</span><span><b>${esc(dsum.title)}</b><span class="note">${esc(dsum.sub)}</span></span>${ic('chevron-right','chev')}</button>`;
   if(S.canWrite) h+=`<div class="btn-row"><button class="btn primary" data-act="open-income">Пришли деньги</button><button class="btn ghost" data-act="open-expense">Потратили</button><button class="btn ghost wide" data-act="new-wish">Хочу купить…</button></div>`;
@@ -529,7 +577,12 @@ function renderNow(){
   const T=tips(P); T.splice(Math.min(1,T.length),0,...wishTips());
   if(!accounts().length&&S.canWrite) T.push({tone:'info',title:'Укажите, где лежат деньги',text:'Добавьте карты и наличку с остатками. Приложение будет подсказывать, сколько и куда переложить после каждого дохода.',act:{label:'Открыть ресурсы',act:'go-res'}});
   else if(RC&&RC.disc>=1) T.unshift({tone:'warn',title:`${fmt(RC.disc)} на картах не разложены по фондам`,text:'Разложите их, и они пойдут туда, где нужнее.',act:{label:'Разложить',act:'found'}});
-  if(T.length) h+=`<section class="block"><h2>Что делать сейчас</h2><div class="tips">${T.map(t=>`<div class="tip ${t.tone}"><span class="dot"></span><div><b>${esc(t.title)}</b><span class="muted small">${esc(t.text)}</span>${t.act&&(S.canWrite||t.act.act==='go-funds')?`<div class="opt-act"><button class="btn sm ghost" data-act="${t.act.act}" ${t.act.id?`data-id="${esc(t.act.id)}"`:''}>${esc(t.act.label)}</button></div>`:''}</div></div>`).join('')}</div></section>`;
+  if(T.length){
+    // самое важное сверху: проблемы, предупреждения, советы, хорошие новости; видно три, остальное по кнопке
+    const rank={bad:0,warn:1,info:2,good:3}; T.forEach((t,k)=>t.k=k); T.sort((a,b)=>(rank[a.tone]??2)-(rank[b.tone]??2)||a.k-b.k);
+    const open=S.tipsOpen, shown=open?T:T.slice(0,3), hid=T.length-3;
+    h+=`<section class="block"><h2>На чём держать фокус</h2><div class="tips">${shown.map(tipCard).join('')}</div>${hid>0?`<button class="btn sm ghost more-tips" data-act="more-tips">${open?'Свернуть':`Ещё ${hid} ${plural(hid,'подсказка','подсказки','подсказок')}`}</button>`:''}</section>`;
+  }
   if(S.wishes.length) h+=`<section class="block"><h2>Хочу купить</h2><div class="list">${S.wishes.map(w=>{const fc=wishForecast(w);return `<button class="row wish" data-act="edit-wish" data-id="${esc(w.id)}" ${S.canWrite?'':'disabled'}><span class="row-main"><span class="name">${esc(w.name||'Без названия')}</span><span class="amt">${fmt(w.price)}</span></span>${wishWho(w)}<span>${fc?`<span class="chip v-${fc.tone}">${esc(fc.text)}</span>${fc.how&&!fc.now?`<span class="note"> ${esc(fc.how)}</span>`:''}`:''}</span></button>`}).join('')}</div></section>`;
   h+=`<section class="block"><div class="sec-head"><h2>Фонды</h2><button class="btn sm ghost" data-tab-go="funds">Настроить</button></div><div class="list river">${activeFunds().map(f=>fundRowNow(f,P.get,mi)).join('')}</div></section>`;
   return h;
@@ -543,6 +596,7 @@ function fundRowNow(f,get,mi){
   else if(f.kind==='debt'){const b=debtBank(f,s,debtPending());pc=v?b.inBank/v:1;right=b.owed>0.5?`осталось ${fmt(b.owed)}`:'закрыт';sub=`погашено ${fmt(b.inBank)} из ${fmt(v)}`+(b.aside>0.5?` · отложено ${fmt(b.aside)}, ждёт «Внёс»`:'')+(+f.rate?` · ${nf2.format(+f.rate)}% годовых`:'')+(+f.pct?` · ${nf2.format(+f.pct)}% с дохода`:'')+(f.deadline?` · до ${dateLabel(f.deadline)}`:'')}
   else if(f.kind==='percent'){right=`<span class="${s.balance<0?'neg':''}">${fmt(s.balance)}</span>`;sub=`${nf.format(v)}% ${f.taxOnly?'с облагаемых доходов':'с каждого дохода'}`}
   else {right=`<span class="${s.balance<0?'neg':''}">${fmt(s.balance)}</span>`;sub='получает всё, что осталось'}
+  if(paused(f)){right='на паузе';pc=null;sub=`в ${PREP[mi]} не получает деньги · ${sub}`}
   return `<button class="frow k-${f.kind}" data-act="edit-fund" data-id="${esc(f.id)}" ${S.canWrite?'':'disabled'}>${fundIcon(f)}<span class="fb"><span class="row-main"><span class="name">${esc(f.name)}</span><span class="amt">${right}</span></span>${pc!==null?`<span class="bar"><i style="width:${Math.max(0,Math.min(100,pc*100)).toFixed(1)}%"></i></span>`:''}<span class="note">${sub}</span></span></button>`;
 }
 
@@ -574,6 +628,7 @@ function renderFunds(){
     const val=f.kind==='percent'||f.kind==='reward'?`${nf.format(v)}%`:f.kind==='rest'?'':fmt(v)+(f.kind==='monthly'?' в месяц':'')+(+f.cap?` · по ${fmt(f.cap)} в месяц`:'')+(+f.minPay?` · платёж ${fmt(f.minPay)}`:'')+(+f.pct?` · ${nf2.format(+f.pct)}% с дохода`:'');
     const db=f.kind==='debt'?debtBank(f,s,pend):null;
     const st=[f.kind==='debt'?`осталось ${fmt(db.owed)}`+(db.aside>0.5?`, отложено ${fmt(db.aside)}`:''):f.kind==='goal'?`накоплено ${fmt(s.collected)}`+(s.collected-s.balance>0.5?`, в фонде ${fmt(s.balance)}`:''):`в фонде ${fmt(s.balance)}`];
+    if(paused(f)) st.unshift('<b>на паузе</b>');
     if(f.deadline) st.push(`до ${dateLabel(f.deadline)}`);
     if(+f.payDay) st.push(`платёж ${Math.round(+f.payDay)}‑го`);
     if(f.kind==='debt'&&+f.rate) st.push(`${nf2.format(+f.rate)}%`);
@@ -699,8 +754,11 @@ function txRow(t){
 function resolveNames(){document.querySelectorAll('[data-who]').forEach(el=>{el.textContent=S.names[el.dataset.who]||''})}
 
 /* ---------- sheets ---------- */
-let sheetT;
+let sheetT, sheetBackNext=null;
+/* Шторка поверх шторки: фонд, открытый из «Из чего складывается», при закрытии возвращает туда же.
+   Шторка, которую можно вернуть, кладёт функцию в S.sheetReopen (в onMount), а нажатие внутри неё готовит возврат. */
 function openSheet(html,onMount){
+  S.sheetBack=sheetBackNext; sheetBackNext=null; S.sheetReopen=null; S.sheetRefresh=null;
   clearTimeout(sheetT); $('#scrim').classList.remove('closing');
   const sh=$('#sheet'); sh.classList.remove('closing'); sh.innerHTML=`<div class="wrap">${html}</div>`; sh.hidden=false; $('#scrim').hidden=false; sh.scrollTop=0;
   onMount&&onMount(sh); const f=sh.querySelector('input.big,input'); f&&!f.dataset.nofocus&&setTimeout(()=>{if(!sh.contains(document.activeElement)||document.activeElement===document.body)f.focus()},60);   // не отбираем фокус, если вы уже начали вводить в другое поле
@@ -718,12 +776,15 @@ const PTR={down:false};
 document.addEventListener('pointerdown',()=>PTR.down=true,true);['pointerup','pointercancel'].forEach(t=>document.addEventListener(t,()=>setTimeout(()=>PTR.down=false,0),true));
 if(window.visualViewport){visualViewport.addEventListener('resize',fitSheet);visualViewport.addEventListener('scroll',fitSheet)}
 document.addEventListener('focusin',e=>{if(e.target.closest&&e.target.closest('#sheet'))setTimeout(fitSheet,320)});
-function closeSheet(){
+function closeSheet(force){
   S.sheetRefresh=null; const sh=$('#sheet'), sc=$('#scrim'); if(sh.hidden)return;
+  if(!force&&S.sheetBack){const back=S.sheetBack;S.sheetBack=null;back();return}
+  S.sheetBack=null;
   const done=()=>{sh.classList.remove('closing');sc.classList.remove('closing');sh.style.bottom='';sh.style.maxHeight='';sh.hidden=true;sc.hidden=true;sh.innerHTML=''};
   if(calm()){done();return}
   sh.classList.add('closing');sc.classList.add('closing');clearTimeout(sheetT);sheetT=setTimeout(done,180);
 }
+function backHere(el){if(el&&el.closest&&el.closest('#sheet')&&S.sheetReopen){const re=S.sheetReopen,sc=$('#sheet').scrollTop;sheetBackNext=()=>re(sc)}}
 function sheetHead(t){return `<div class="sheet-head"><h2>${t}</h2><button class="x" data-act="close" aria-label="Закрыть">${ic('x')}</button></div>`}
 function typeSeg(active){return `<div class="seg"><button data-act="open-income" aria-pressed="${active==='income'}">Доход</button><button data-act="open-expense" aria-pressed="${active==='expense'}">Трата</button></div>`}
 
@@ -732,7 +793,7 @@ function splitLine(d){
   if(!G.length) return '';
   return `<div class="split">${G.map(g=>`<div class="sp-row"><span>${esc(g.t)}${g.n.length&&g.id!=='tax'?`<small>${esc(g.n.slice(0,3).join(', '))}${g.n.length>3?'…':''}</small>`:''}</span><b>${fmt(g.v)}</b></div>`).join('')}</div>`;
 }
-function openNeedWhy(){
+function openNeedWhy(scroll){
   const P=monthPicture(), {get}=P; const mi=P.mi, C=planCheck(P);
   const rows=P.funds.map(f=>({f,...reqParts(f,get)})).filter(r=>r.total>0.5);
   const life=rows.filter(r=>r.f.kind==='monthly'), mins=rows.filter(r=>r.f.kind==='debt'&&r.base>0.5), plan=rows.filter(r=>r.extra>0.5||(r.f.kind==='goal'&&r.base>0.5));
@@ -751,8 +812,12 @@ function openNeedWhy(){
   ${!rows.length?'<p class="note">На этот месяц всё закрыто.</p>':''}
   <div class="list chg">${line('Жизнь и минимальные платежи',fmt(P.coreNet))}${P.pct>0?line(`Налог и процентные фонды (${nf.format(P.pct)}%)`,'+'+fmt(P.coreGross-P.coreNet)):''}${line('Нужно заработать',fmt(P.coreGross),true)}${P.planNet>0.5?line(P.pct>0?`И ещё на планы <span class="note">(с налогом ${fmt(P.planGross)})</span>`:'И ещё на планы',fmt(P.planNet)):''}</div>
   ${P.planNet>0.5?(C.known?`<div class="eyebrow">Хватит ли дохода на планы</div>
-  <div class="list chg">${line('Весь доход семьи в месяц',fmt(C.inc))}${C.taxAmt>0.5?line(`Налог и процентные фонды (${nf.format(P.pct)}%)`,'−'+fmt(C.taxAmt)):''}${line('Жизнь: платежи в месяц','−'+fmt(C.life))}${C.mins>0.5?line('Минимальные платежи по долгам','−'+fmt(C.mins)):''}${C.rew>0.5?line(`Награды (${nf.format(C.rp)}% от остатка)`,'−'+fmt(C.rew)):''}${line('Остаётся на планы',fmt(C.free),true)}${line('Планы по срокам просят',fmt(C.ask),true)}</div>
-  <div class="tip ${C.ok&&!C.late.length?'good':'bad'}"><span class="dot"></span><div><b>${C.ok&&!C.late.length?'Планы реальны при вашем доходе':`Не хватает ${fmt(Math.max(0,C.ask-C.free))} в месяц`}</b><span class="muted small">${C.ok&&!C.late.length?'Все сроки успеваются.':'Сроки не сходятся с доходом. Откройте фонд и сдвиньте или уберите срок: без срока долг гасится свободными деньгами по очереди, а цель копится, когда остаются деньги.'}</span></div></div>`:'<p class="note">Укажите обычный доход семьи в меню → Семья, чтобы проверить, реальны ли сроки.</p>'):''}`);
+  <div class="list chg">${line(incomeBasis().src==='hist'?`Обычный доход по опыту <span class="note">(средний за ${incomeBasis().h.length} мес.)</span>`:'Весь доход семьи в месяц',fmt(C.inc))}${C.taxAmt>0.5?line(`Налог и процентные фонды (${nf.format(P.pct)}%)`,'−'+fmt(C.taxAmt)):''}${line('Жизнь: платежи в месяц','−'+fmt(C.life))}${C.mins>0.5?line('Минимальные платежи по долгам','−'+fmt(C.mins)):''}${C.rew>0.5?line(`Награды (${nf.format(C.rp)}% от остатка)`,'−'+fmt(C.rew)):''}${line('Остаётся на планы',fmt(C.free),true)}${line('Планы по срокам просят',fmt(C.ask),true)}</div>
+  <div class="tip ${C.ok&&!C.late.length?'good':'bad'}"><span class="dot"></span><div><b>${C.ok&&!C.late.length?'Планы реальны при вашем доходе':`Не хватает ${fmt(Math.max(0,C.ask-C.free))} в месяц`}</b><span class="muted small">${C.ok&&!C.late.length?'Все сроки успеваются.':'Сроки не сходятся с доходом. Откройте фонд и сдвиньте или уберите срок: без срока долг гасится свободными деньгами по очереди, а цель копится, когда остаются деньги.'}</span></div></div>`:'<p class="note">Укажите обычный доход семьи в меню → Семья, чтобы проверить, реальны ли сроки.</p>'):''}`,sh=>{
+    if(scroll) sh.scrollTop=scroll;
+    S.sheetReopen=openNeedWhy;
+    S.sheetRefresh=()=>{const k=$('#sheet').scrollTop;openNeedWhy(k)};   // данные поменялись: перерисовать на том же месте
+  });
 }
 function effectRows(rows){
   return `<div class="list chg">${rows.map(r=>{const neg=!r.debt&&r.after<-0.5;
@@ -974,7 +1039,9 @@ function openFund(f,kindPreset){
     <p class="note">${s.collected-s.balance>0.5?`Накоплено ${fmt(s.collected)}, потрачено ${fmt(s.collected-s.balance)}. `:''}${s.balance>0.5?`В фонде осталось ${fmt(s.balance)}. Закройте фонд, и остаток уйдёт туда, куда скажете.`:s.balance<-0.5?`Фонд в минусе на ${fmt(-s.balance)}. Закройте фонд, и минус покроется из выбранного фонда.`:'Закройте фонд, чтобы он больше не забирал деньги.'}</p>
     ${Math.abs(s.balance)>0.5?`<div class="field"><label for="fCloseTo">${s.balance>0?'Куда перенести остаток':'Из какого фонда покрыть минус'}</label><select id="fCloseTo">${activeFunds().filter(x=>x.id!==f.id&&x.kind!=='debt').sort((x,y)=>(y.kind==='rest')-(x.kind==='rest')).map(x=>`<option value="${esc(x.id)}">${esc(x.name)} · ${fmt(fstate(x,get).balance)}</option>`).join('')}<option value="_free">Без фонда</option></select></div>`:''}
     <button class="btn primary" id="fClose">${ic('check')}${f.isDebt?'Долг оплачен, закрыть':'Цель выполнена, закрыть'}</button></section>`:''}
+  ${!isNew&&canPause(f)?`<button class="btn ghost" id="fPause">${paused(f)?`${ic('play')}Снять с паузы`:`${ic('pause')}Пауза на ${NOM[+curMonth().slice(5)-1].toLowerCase()}`}</button><span class="note">${paused(f)?'В этом месяце фонд не получает деньги. С начала следующего всё вернётся само.':'В этом месяце фонд не будет получать деньги и напоминать о платеже. С начала следующего всё вернётся само.'}</span>`:''}
   ${isNew||isReward?'':`<button class="btn danger" id="fDel">${ic('trash')}Удалить фонд</button>`}`, ()=>{
+    $('#fPause')?.addEventListener('click',()=>setPause(f,!paused(f)));
     let {rule,debt,accum}=st0;
     const curKind=()=>isReward?'reward':accum?'goal':debt?'debt':rule;
     const icoNote=()=>{$('#fIcoNote').textContent=icon?'':`· сейчас ${fundEmoji({name:$('#fName').value,kind:curKind(),isDebt:debt})}, подобрана по названию`};
@@ -1065,6 +1132,17 @@ function openFund(f,kindPreset){
       },b>0&&to?`${what} закрыт${f.isDebt?'':'а'}, ${fmt(b)} ушли в «${fundName(to)}»`:`${what} закрыт${f.isDebt?'':'а'}`);
     });
   });
+}
+// Пауза на текущий месяц. Деньги, которые уже лежат в фонде, можно сразу отдать другим фондам
+async function setPause(f,on){
+  const m=curMonth(), mi=+m.slice(5)-1;
+  await write(async()=>{await DB.update('funds',f.id,{pausedM:on?m:''});f.pausedM=on?m:''},on?`«${f.name}» на паузе в ${PREP[mi]}`:`«${f.name}» снова получает деньги`);
+  if(!on||f.kind==='goal') return;
+  const b=Math.round(fstate(f,stats().get).balance); if(b<1) return;
+  setTimeout(()=>toast(`В «${f.name}» осталось ${fmt(b)}`,{label:'Отдать другим фондам',icon:'chevron-right',fn:async()=>{
+    await write(async()=>{await DB.add('tx',{type:'transfer',from:f.id,alloc:{_free:b},amount:b,date:today(),month:m,note:`«${f.name}» на паузе, остаток`,by:S.uid||null,createdAt:Date.now()})},'Остаток перенесён');
+    setTimeout(()=>openIncome('free'),200);
+  }}),2700);
 }
 async function deleteFund(f){
   if(f.kind==='reward'){toast('Фонд наград удалить нельзя. Если он не нужен, поставьте 0%.');return}
@@ -1217,7 +1295,7 @@ const paidMarked=id=>{const m=curMonth();return S.tx.some(t=>t.type==='paidmark'
 function upcoming(days=7){
   const {get}=stats(); const now=new Date(); const t0=new Date(now.getFullYear(),now.getMonth(),now.getDate()); const out=[];
   for(const f of activeFunds()){
-    const day=Math.round(+f.payDay||0); if(!(day>=1&&day<=31)||!(f.kind==='monthly'||f.kind==='debt')) continue;
+    const day=Math.round(+f.payDay||0); if(!(day>=1&&day<=31)||!(f.kind==='monthly'||f.kind==='debt')||paused(f)) continue;
     const s=fstate(f,get), v=+f.value||0, mp=+f.minPay||0;
     if(f.kind==='debt'&&s.remaining<=0.5) continue;
     const paidM=f.kind==='debt'?debtPaidM(f.id):0;
@@ -1359,7 +1437,7 @@ function checkCelebrations(){
 }
 function showCelebration(fid){
   const f=fundById(fid); if(!f) return;
-  celeOn=true; closeSheet(); const el=$('#cele'); const debt=f.kind==='debt'; const v=+f.value||0;
+  celeOn=true; closeSheet(true); const el=$('#cele'); const debt=f.kind==='debt'; const v=+f.value||0;
   const months=f.createdAt?Math.round((Date.now()-f.createdAt)/(30.44*864e5)):0;
   const B=debt?Math.round(v*BONUS_PCT/100)-(+f.bonusUsed||0):0;
   el.innerHTML=`<canvas aria-hidden="true"></canvas><div class="ce-in"><div class="ce-emoji" aria-hidden="true">${fundEmoji(f)}</div><div class="stamp">${debt?'ПОГАШЕНО':'НАКОПЛЕНО'}</div>
@@ -1391,6 +1469,19 @@ function setTheme(t){
   if(t==='auto'){LS.del('ff-theme');delete document.documentElement.dataset.theme;if(metas[0])metas[0].content=THEME_COL.light;if(metas[1])metas[1].content=THEME_COL.dark}
   else{LS.set('ff-theme',t);document.documentElement.dataset.theme=t;metas.forEach(m=>m.content=THEME_COL[t])}
 }
+
+/* ---------- история: месяцы листаются кнопками и свайпом ---------- */
+function histGo(d){if(d>0&&S.histMonth>=curMonth())return;S.histMonth=shiftMonth(S.histMonth,d);S.histDir=d;S.enterNext=true;render()}
+let hsw=null;
+document.addEventListener('touchstart',e=>{
+  hsw=null; if(S.tab!=='hist'||S.status!=='ready'||!$('#sheet').hidden||e.touches.length!==1||!e.target.closest('#main')) return;
+  const t=e.touches[0]; hsw={x:t.clientX,y:t.clientY,at:Date.now()};
+},{passive:true});
+document.addEventListener('touchend',e=>{
+  if(!hsw) return; const t=e.changedTouches[0], dx=t.clientX-hsw.x, dy=t.clientY-hsw.y, quick=Date.now()-hsw.at<700; hsw=null;
+  if(quick&&Math.abs(dx)>=60&&Math.abs(dx)>Math.abs(dy)*1.5) histGo(dx<0?1:-1);   // влево: следующий месяц, вправо: предыдущий
+},{passive:true});
+document.addEventListener('touchcancel',()=>{hsw=null},{passive:true});
 
 /* ---------- перетаскивание фондов ---------- */
 let drag=null;
@@ -1442,22 +1533,22 @@ document.addEventListener('click',async e=>{
     try{for(const k of await caches.keys()) await caches.delete(k); for(const r of await navigator.serviceWorker.getRegistrations()) await r.unregister()}catch(e){}
     location.reload(); return true;
   }
-  if(act==='tour'){closeSheet();LS.del(tourKey());if(TR)tourEnd();LS.del(tourKey());S.tab='now';S.enterNext=true;render();window.scrollTo(0,0);return}
-  if(act==='wz-restart'){closeSheet();S.wz=newWizard(activeFunds().length?'existing':'new');S.status='setup';S.enterNext=true;render();window.scrollTo(0,0);return}
+  if(act==='tour'){closeSheet(true);LS.del(tourKey());if(TR)tourEnd();LS.del(tourKey());S.tab='now';S.enterNext=true;render();window.scrollTo(0,0);return}
+  if(act==='wz-restart'){closeSheet(true);S.wz=newWizard(activeFunds().length?'existing':'new');S.status='setup';S.enterNext=true;render();window.scrollTo(0,0);return}
   if(await wzAction(act,a))return;
   if(act==='close')closeSheet();
   else if(act==='open-income'){if(S.canWrite)openIncome()}
   else if(act==='open-expense'){if(S.canWrite)openExpense()}
   else if(act==='new-fund')openFund(null);
   else if(act==='new-debt')openFund(null,'debt');
-  else if(act==='edit-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite)openFund(f)}
+  else if(act==='edit-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite){backHere(a);openFund(f)}}
   else if(act==='ask-del-fund'){S.confirmFund=a.dataset.id;render()}
   else if(act==='cancel-del'){S.confirmFund=null;render()}
   else if(act==='del-fund'){const f=fundById(a.dataset.id);if(f){a.disabled=true;deleteFund(f)}}
   else if(act==='distribute-free'){if(S.canWrite)openIncome('free')}
   else if(act==='new-wish'){if(S.canWrite)openWish(null)}
   else if(act==='edit-wish'){const w=S.wishes.find(x=>x.id===a.dataset.id);if(w&&S.canWrite)openWish(w)}
-  else if(act==='hm'){S.histMonth=shiftMonth(S.histMonth,+a.dataset.d);S.enterNext=true;render()}
+  else if(act==='hm'){histGo(+a.dataset.d)}
   else if(act==='edit-tx'){const t=S.tx.find(x=>x.id===a.dataset.id);if(t&&S.canWrite){if(t.type==='income')openIncome(null,t);else if(t.type==='expense')openExpense(t)}}
   else if(act==='del-tx'){if(S.canWrite){const t=S.tx.find(x=>x.id===a.dataset.id);if(t&&t.type==='income'&&t.alloc)openDeleteIncome(t);else deleteTx(a.dataset.id)}}
   else if(act==='go-res'){S.tab='res';S.enterNext=true;render();window.scrollTo(0,0)}
@@ -1469,6 +1560,9 @@ document.addEventListener('click',async e=>{
   else if(act==='go-funds'){S.tab='funds';S.enterNext=true;render();window.scrollTo(0,0)}
   else if(act==='pay-lump'){const f=fundById(a.dataset.id);if(f&&S.canWrite)openExpense(null,{fundId:f.id,amount:Math.round(fstate(f,stats().get).balance),note:'Платёж по долгу'})}
   else if(act==='need-why'){openNeedWhy()}
+  else if(act==='more-tips'){S.tipsOpen=!S.tipsOpen;render()}
+  else if(act==='pause-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite)setPause(f,true)}
+  else if(act==='nocut-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite)write(async()=>{await DB.update('funds',f.id,{noCut:true});f.noCut=true},`Больше не предлагаю сокращать «${f.name}»`)}
   else if(act==='paid-mark'){const f=fundById(a.dataset.id);if(f&&S.canWrite){const date=today();
     const id=await DB.add('tx',{type:'paidmark',fundId:f.id,amount:+a.dataset.amt||0,date,month:curMonth(),note:'',by:S.uid||null,createdAt:Date.now()});
     toast(`«${f.name}» отмечен оплаченным`,{label:'Вернуть',fn:async()=>{try{await DB.del('tx',id);toast('Отметка снята')}catch(e){toast('Не получилось снять отметку.')}}})}}
@@ -1624,6 +1718,7 @@ function openAccount(a){
   <div class="field"><label for="aNm">Название</label><input id="aNm" value="${esc(a.name)}" placeholder="Например, Тинькофф Блэк" ${isNew?'':'data-nofocus="1"'}></div>
   <div class="field"><span class="lbl">Что это</span><div class="seg three" id="aKind">${Object.entries(ACC_KINDS).map(([k,v])=>`<button type="button" data-k="${k}" aria-pressed="${kind===k}">${v.e} ${v.t}</button>`).join('')}</div></div>
   <div class="field"><label for="aBal">Сколько сейчас лежит, ₽</label><input class="big" id="aBal" inputmode="decimal" placeholder="0" value="${isNew?'':nf.format(bal)}"><span class="note">${isNew?'Посмотрите в приложении банка. Дальше остаток будет меняться сам от ваших записей.':'Остаток меняется сам от записей. Если не сходится с банком, впишите точную сумму.'}</span></div>
+  ${accFundsField(a,isNew)}
   <div class="err" id="aErr"></div>
   <button class="btn primary" id="aSave">${isNew?'Добавить':'Сохранить'}</button>
   ${isNew?'':`<button class="btn danger" id="aDel">${ic('trash')}Удалить</button>`}`,()=>{
@@ -1638,13 +1733,25 @@ function openAccount(a){
       const data={name,kind};
       if(isNew||v!==bal){data.bal=v;data.at=Date.now()}
       if(isNew){data.createdAt=Date.now();data.order=accounts().length+1}
-      await write(()=>saveAccount(isNew?newAccId():a.id,data),isNew?'Добавлено':'Сохранено');
+      const id=isNew?newAccId():a.id;
+      // «Какие фонды хранит»: отмеченные фонды переезжают на эту карту, снятые остаются без карты
+      const moves=[...document.querySelectorAll('#aFunds input[data-fid]')].map(c=>{const f=fundById(c.dataset.fid),cur=fundAcc(f);
+        return c.checked&&cur!==id?{f,to:id}:!c.checked&&cur===id?{f,to:''}:null}).filter(Boolean);
+      await write(async()=>{await saveAccount(id,data);for(const m of moves){m.f.accountId=m.to;await DB.update('funds',m.f.id,{accountId:m.to})}},isNew?'Добавлено':'Сохранено');
     });
     const del=$('#aDel'); if(del){let armed=false;del.addEventListener('click',async()=>{
       if(!armed){armed=true;del.textContent='Фонды на ней станут «без места». Нажмите ещё раз';setTimeout(()=>{armed=false;if(del.isConnected)del.innerHTML=`${ic('trash')}Удалить`},4000);return}
       await write(()=>saveAccount(a.id,{archived:true}),'Удалено');
     })}
   });
+}
+// Окно карты: какие фонды хранят деньги на ней. Фонд может лежать только на одной карте, отметка переносит его сюда
+function accFundsField(a,isNew){
+  const all=activeFunds(); if(!all.length) return '';
+  return `<div class="field"><span class="lbl">Какие фонды хранит</span><div class="list acc-pick" id="aFunds">${all.map(f=>{const cur=fundAcc(f), here=!isNew&&cur===a.id;
+    const note=f.kind==='debt'?'деньги на платёж до «Внёс»':cur&&!here?`сейчас на «${accName(cur)}»`:'';
+    return `<label class="check row">${fundIcon(f,'sm')}<span class="name">${esc(f.name)}${note?`<span class="note">${esc(note)}</span>`:''}</span><input type="checkbox" data-fid="${esc(f.id)}" ${here?'checked':''} ${S.canWrite?'':'disabled'}></label>`}).join('')}</div>
+  <span class="note">Отметьте фонды, деньги которых лежат здесь. Тогда приложение подскажет, сколько и куда переложить.</span></div>`;
 }
 function accSelect(id,sel,label,extra=''){
   const L=accounts(); if(!L.length) return '';
@@ -1666,15 +1773,10 @@ function renderRes(){
       <span class="note">${fs.length?`по фондам ${fmt(exp)}`+(Math.abs(d)>=1?` · <span class="${d<0?'neg':''}">${d>0?'лишние':'не хватает'} ${fmt(Math.abs(d))}</span>`:' · сходится'):'фондов здесь нет'}</span>
       ${fs.length?`<span class="acc-funds">${fs.map(x=>`<span class="chip">${esc(fundEmoji(x.f))} ${esc(x.f.name)} ${x.debt?`к внесению ${fmt(x.b)}`:fmt(x.b)}</span>`).join('')}</span>`:''}</button>`}).join('')}</div>
     ${S.canWrite?`<button class="btn ghost" data-act="new-acc">${ic('plus')}Добавить карту или наличные</button>`:''}</section>`;
-  const all=activeFunds(), none=all.filter(f=>!fundAcc(f)).length;
-  if(all.length) h+=`<section class="block"><h2>Где хранятся фонды</h2><p class="note">${none?`Карта не указана у ${none} ${plural(none,'фонда','фондов','фондов')}. `:''}Укажите, где лежат деньги каждого фонда, в том числе отложенные на долги. Тогда приложение будет подсказывать, сколько и куда переложить.</p><div class="list">${all.map(f=>{const cur=fundAcc(f);
-    return `<div class="row place">${fundIcon(f,'sm')}<span class="name">${esc(f.name)}${f.kind==='debt'?'<span class="note">деньги на платёж до «Внёс»</span>':''}</span><select data-place="${esc(f.id)}" aria-label="Где хранится «${esc(f.name)}»" ${S.canWrite?'':'disabled'}><option value="" ${cur?'':'selected'}>Не указано</option>${L.map(a=>`<option value="${esc(a.id)}" ${a.id===cur?'selected':''}>${accEmoji(a)} ${esc(a.name)}</option>`).join('')}</select></div>`}).join('')}</div></section>`;
+  const {get}=stats(), none=activeFunds().filter(f=>!fundAcc(f)&&f.kind!=='debt'&&Math.round(fstate(f,get).balance)>0).length;
+  if(none) h+=`<p class="note">У ${none} ${plural(none,'фонда','фондов','фондов')} с деньгами не указано, где они лежат. Откройте карту и отметьте в «Какие фонды хранит».</p>`;
   return h;
 }
-document.addEventListener('change',e=>{
-  const s=e.target.closest&&e.target.closest('[data-place]'); if(!s) return;
-  const f=fundById(s.dataset.place); if(!f) return; f.accountId=s.value; DB.update('funds',f.id,{accountId:s.value}); toast(s.value?`«${f.name}» хранится на «${accName(s.value)}»`:`У «${f.name}» карта не указана`); renderSoon();
-});
 
 /* ---------- пошаговая настройка ----------
    Первый вход: 5 шагов (доход → где лежат деньги → фонды → план → семья), потом подсказки на главной.
@@ -2167,7 +2269,7 @@ async function onGateAction(act,a){
   if(act==='auth-mode'){S.authMode=S.authMode==='register'?'login':'register';render();return true}
   if(act==='reset-pw'){const email=$('#aEmail').value.trim(); if(!email){$('#gErr').textContent='Введите почту, и мы пришлём ссылку для нового пароля.';return true}
     gateBusy(a,async()=>{await DB.resetPassword(email);$('#gNote').textContent='Письмо со ссылкой отправлено. Проверьте почту, в том числе «Спам».'});return true}
-  if(act==='logout'){closeSheet();await DB.signOut();return true}
+  if(act==='logout'){closeSheet(true);await DB.signOut();return true}
   if(act==='create-hh'){const useSeed=$('#oSeed')?$('#oSeed').checked:false;
     gateBusy(a,async()=>{const hid=await DB.createHousehold(S.uid,S.myName,useSeed?SEED:null);LS.set('ff-hid:'+S.uid,hid);startHousehold(hid)});return true}
   if(act==='join-hh'){const code=$('#oCode').value.trim(); if(!code){$('#gErr').textContent='Введите код приглашения.';return true}
@@ -2186,7 +2288,7 @@ function openSettings(){
   <div class="field"><label>Участники</label><div class="list">${ids.map(id=>`<div class="row"><div class="row-main"><span class="name">${esc(S.members[id]||'Без имени')}</span><span class="note">${id===S.uid?'вы':''}</span></div></div>`).join('')}</div></div>
   <div class="field"><label for="sName">Ваше имя</label><input id="sName" data-nofocus="1" value="${esc(S.members[S.uid]||S.myName||'')}"></div>
   <button class="btn ghost" id="sSaveName">Сохранить имя</button>
-  <div class="field"><label for="sInc">Обычный доход семьи в месяц, ₽</label><input id="sInc" inputmode="decimal" value="${S.household&&+S.household.expectedIncome?nf.format(S.household.expectedIncome):''}"><span class="note">По нему считается, на сколько покупки сдвигают закрытие долгов и когда накопится цель.</span></div>
+  <div class="field"><label for="sInc">Обычный доход семьи в месяц, ₽</label><input id="sInc" inputmode="decimal" value="${S.household&&+S.household.expectedIncome?nf.format(S.household.expectedIncome):''}"><span class="note">${incomeNote()}</span></div>
   <button class="btn ghost" id="sSaveInc">Сохранить доход</button>
   <div class="field"><span class="lbl">Тема</span><div class="seg three">${[['auto','monitor-smartphone','Авто'],['light','sun','Светлая'],['dark','moon','Тёмная']].map(([k,i,l])=>`<button type="button" data-theme-set="${k}" aria-pressed="${curTheme()===k}">${ic(i)}${l}</button>`).join('')}</div><span class="note">«Авто» следует за настройкой телефона.</span></div>
   <div class="field"><span class="lbl">Напоминания</span><button class="btn ghost" data-act="ics">${ic('calendar-plus')}Платежи в календарь телефона</button><span class="note">Каждый платёж с указанным днём станет ежемесячным событием с напоминанием накануне. Если поменяете дни или суммы, добавьте файл заново.</span></div>
@@ -2250,7 +2352,7 @@ render();
   try{await DB.init()}catch(e){S.status='config';S.gateErr='Не удалось загрузить библиотеки Firebase. Проверьте интернет и обновите страницу.';render();return}
   DB.setErrorHandler(e=>{if(e&&e.code==='permission-denied')toast('Сервер не принял запись: нет доступа.');else if(e&&e.code!=='unavailable')toast('Запись не сохранилась на сервере. Попробуйте ещё раз.')});
   DB.onAuth(async u=>{
-    stopWatching(); closeSheet();
+    stopWatching(); closeSheet(true);
     if(!u){S.uid=null;S.hid=null;S.funds=[];S.tx=[];S.wishes=[];S.members={};S.status='auth';render();return}
     S.uid=u.uid; S.myName=u.name||S.pendingName||''; S.status='loading'; render();
     // бюджет с прошлого входа открываем сразу из кэша телефона, профиль проверяем в фоне
