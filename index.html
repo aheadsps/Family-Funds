@@ -154,7 +154,7 @@ section.block{display:flex;flex-direction:column;gap:10px}
 .ring b .ic{width:28px;height:28px;color:var(--accent)}
 .fig{font-weight:700;font-size:clamp(28px,8.4vw,38px);letter-spacing:-.02em;line-height:1.1}
 .fig.ok{color:var(--good);font-size:clamp(22px,6.4vw,28px)}
-.hero-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;padding-top:12px;border-top:1px solid var(--line)}
+.hero-split{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:12px;padding-top:12px;border-top:1px solid var(--line)}
 .kv .k{font-size:12px;color:var(--muted)}
 .kv .v{font-weight:600;font-size:16px}
 .goal-chip{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:12px 14px;box-shadow:var(--card-shadow)}
@@ -169,7 +169,8 @@ section.block{display:flex;flex-direction:column;gap:10px}
 .tip.warn .dot{background:var(--warn)} .tip.bad .dot{background:var(--bad)} .tip.good .dot{background:var(--good)} .tip.info .dot{background:var(--info)}
 .tip b{font-weight:600;display:block}
 .tip > div{min-width:0}
-.opt-act{margin-top:8px}
+.opt-act{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
+.more-tips{align-self:flex-start;margin-top:8px}
 
 /* списки */
 .list{overflow:hidden}
@@ -394,6 +395,8 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
   main.enter .river .frow:nth-child(2){animation-delay:.05s} main.enter .river .frow:nth-child(3){animation-delay:.1s}
   main.enter .river .frow:nth-child(4){animation-delay:.15s} main.enter .river .frow:nth-child(n+5){animation-delay:.2s}
   main.enter .wz-body,main.enter #wzLive{animation:slide .3s cubic-bezier(.25,.8,.25,1) both}
+  main.enter.sw-next > *:not(.month-sw){animation:slide .26s cubic-bezier(.25,.8,.25,1) both}
+  main.enter.sw-prev > *:not(.month-sw){animation:slideback .26s cubic-bezier(.25,.8,.25,1) both}
   .sheet.closing{animation:down .18s ease-in forwards}
   .scrim{animation:fade .2s ease-out}
   .scrim.closing{animation:fadeout .18s ease-in forwards}
@@ -406,6 +409,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
   @keyframes drip{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
   @keyframes pour{from{transform:scale(.6);opacity:.3}to{transform:none;opacity:1}}
   @keyframes slide{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+  @keyframes slideback{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
   @keyframes grow{from{width:0}}
   @keyframes down{to{transform:translateY(40px);opacity:0}}
   @keyframes fade{from{opacity:0}}
@@ -560,6 +564,9 @@ html.app-ready{background:var(--bg)}
 .row.place{display:grid;grid-template-columns:30px 1fr minmax(0,46%);gap:10px;align-items:center}
 .row.place .fi{opacity:1;box-shadow:none}
 .row.place .name{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.acc-pick .row.check{display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;flex-direction:row;cursor:pointer;font-size:15px}
+.acc-pick .row.check .name{font-weight:600;min-width:0;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:2px}
+.acc-pick .row.check .fi{opacity:1;box-shadow:none}
 .row.place .name .note{display:block;font-weight:400;margin-top:2px}
 .row.place select,.field.cover select{width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink)}
 .field.cover{background:var(--warn-soft);border-radius:var(--r-sm);padding:12px}
