@@ -14,8 +14,8 @@ const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
 const pend = block(/^function accounts\(\)/, /^function moveTitle/);
 const order = block(/^const FTIERS=/, /^function renderFunds/) + '\n' + block(/^function reorderGroup/, /^async function moveFund/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {quickSpends,noteFund,debtList,debtAdvice,debtTip,canPause,checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
-const { quickSpends, noteFund, debtList, debtAdvice, debtTip, canPause, checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {weekStats,weekDiff,weekQuestion,weekText,rewardDue,quickSpends,noteFund,debtList,debtAdvice,debtTip,canPause,checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
+const { weekStats, weekDiff, weekQuestion, weekText, rewardDue, quickSpends, noteFund, debtList, debtAdvice, debtTip, canPause, checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -636,4 +636,46 @@ test('подсказка фонда по комментарию: берётся 
   assert.equal(noteFund('Такси'), null);
   assert.equal(noteFund('к'), null);
   assert.equal(noteFund('Не записано, найдено при сверке'), null);
+});
+
+/* ---------- итоги недели и награда ---------- */
+test('итоги недели: доход, траты, долги, топ фондов и сравнение с прошлой неделей', () => {
+  setup([food, { id: 'cafe', name: 'Кофе', kind: 'monthly', value: 4000 }, card, rest], [
+    { id: 'i1', type: 'income', amount: 60000, date: dAgo(2), month: m, alloc: {} },
+    { id: 'i0', type: 'income', amount: 99999, date: dAgo(1), month: m, found: true, alloc: {} },
+    ex('a', 'food', 5000, 1), ex('b', 'cafe', 700, 3), ex('c', 'food', 2000, 5),
+    ex('d', 'cc', 5000, 2), { id: 'mv', type: 'move', debt: 'cc', amount: 3000, date: dAgo(4), month: m },
+    ex('p1', 'food', 4000, 9), ex('p2', 'cafe', 1000, 10), { id: 'old', type: 'income', amount: 1, date: dAgo(30), month: m, alloc: {} }]);
+  const w = weekStats();
+  assert.equal(w.inc, 60000);
+  assert.equal(w.exp, 7700);
+  assert.equal(w.debt, 8000);
+  assert.deepEqual(w.top.map(x => [x.id, x.sum]), [['food', 7000], ['cafe', 700]]);
+  assert.equal(w.prev.exp, 5000);
+  assert.match(weekDiff(w.exp, w.prev.exp), /на .*2.?700.* больше, чем неделей раньше/);
+  assert.equal(weekDiff(100, 0), '');
+});
+
+test('итоги недели: вопрос для совета зависит от того, что заметнее, текст для отправки собирается', () => {
+  setup([food, card, rest], []);
+  const base = { from: dAgo(6), to: dAgo(0), inc: 0, exp: 1000, debt: 0, top: [], checks: 6, prev: { inc: 0, exp: 1000, debt: 0 } };
+  assert.match(weekQuestion({ ...base, exp: 2000 }), /Расходы выросли на 100%/);
+  assert.match(weekQuestion({ ...base, debt: 5000 }), /По долгам внесли/);
+  assert.match(weekQuestion({ ...base, checks: 2 }), /Сверок 2 из 7/);
+  assert.match(weekQuestion(base), /Что порадовало/);
+  const t = weekText({ ...base, top: [{ id: 'food', name: 'Еда', sum: 800 }] });
+  assert.match(t, /^Итоги недели, /);
+  assert.match(t, /Больше всего ушло: Еда 800/);
+  assert.match(t, /Вопрос для разговора: /);
+});
+
+test('награда за неделю сверок: нужно 5 дней из 7 и вошедший пользователь', () => {
+  const d = checkDays(7);
+  S.uid = 'u1';
+  S.tx = d.slice(0, 4).map((x, i) => ({ id: 'c' + i, type: 'check', date: x }));
+  assert.equal(rewardDue(), null);
+  S.tx = d.slice(0, 5).map((x, i) => ({ id: 'c' + i, type: 'check', date: x }));
+  assert.equal(rewardDue(), 5);
+  S.uid = null;
+  assert.equal(rewardDue(), null);
 });
