@@ -71,5 +71,35 @@ await t('отзывы: чужое имя, без входа и слишком д
   await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(),'feedback/f3'), { uid:'', kind:'free' }));
   await assertFails(setDoc(doc(as('bob'),'feedback/f4'), { uid:'bob', text:'x'.repeat(2001) }));
   await assertSucceeds(setDoc(doc(as('bob'),'feedback/f5'), { uid:'bob', kind:'pmf', answer:'very' })); });
+// сотрудники админки: staff/max активен, staff/old отключён
+async function seedStaff() { await seed(); await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d,'staff/max'), { role:'owner', active:true, name:'Максим', num:1 });
+  await setDoc(doc(d,'staff/old'), { role:'support', active:false, name:'Бывший', num:2 });
+  await setDoc(doc(d,'users/bob'), { hid:'h1', name:'B' });
+  await setDoc(doc(d,'households/h1/tx/t1'), { type:'check', date:'2026-11-05', by:'bob' });
+  await setDoc(doc(d,'feedback/f1'), { uid:'bob', kind:'free', text:'ok' }); }); }
+await t('админка: активный сотрудник читает семьи, участников, записи, профили, отзывы и сотрудников', async () => { await seedStaff(); const d = as('max');
+  await assertSucceeds(getDoc(doc(d,'households/h1')));
+  await assertSucceeds(getDoc(doc(d,'households/h1/members/bob')));
+  await assertSucceeds(getDoc(doc(d,'households/h1/tx/t1')));
+  await assertSucceeds(getDoc(doc(d,'households/h1/funds/f1')));
+  await assertSucceeds(getDoc(doc(d,'users/bob')));
+  await assertSucceeds(getDoc(doc(d,'feedback/f1')));
+  await assertSucceeds(getDoc(doc(d,'staff/old'))); });
+await t('админка: сотрудник пока ничего не меняет в данных семьи', async () => { await seedStaff(); const d = as('max');
+  await assertFails(setDoc(doc(d,'households/h1/tx/t9'), { type:'expense', amount:1 }));
+  await assertFails(updateDoc(doc(d,'households/h1/tx/t1'), { note:'x' }));
+  await assertFails(deleteDoc(doc(d,'households/h1/tx/t1')));
+  await assertFails(updateDoc(doc(d,'households/h1'), { owner:'alice', x:1 }));
+  await assertFails(setDoc(doc(d,'users/bob'), { hid:'h2' }));
+  await assertFails(setDoc(doc(d,'staff/eve'), { role:'owner', active:true })); });
+await t('админка: отключённый сотрудник и обычный человек не видят чужое', async () => { await seedStaff();
+  for (const u of ['old', 'eve']) { const d = as(u);
+    await assertFails(getDoc(doc(d,'households/h1/tx/t1')));
+    await assertFails(getDoc(doc(d,'users/bob')));
+    await assertFails(getDoc(doc(d,'feedback/f1'))); }
+  await assertSucceeds(getDoc(doc(as('old'),'staff/old')));
+  await assertFails(getDoc(doc(as('eve'),'staff/max')));
+  await assertFails(setDoc(doc(as('eve'),'staff/eve'), { role:'owner', active:true })); });
 console.log(results.map(r => r.join(' ')).join('\n')); console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
 await env.cleanup(); process.exit(0);

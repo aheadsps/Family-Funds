@@ -7,9 +7,20 @@ service cloud.firestore {
     function isMember(hid) {
       return signedIn() && exists(/databases/$(database)/documents/households/$(hid)/members/$(request.auth.uid));
     }
+    // сотрудник Потока (админка): запись в staff/{uid} с active == true, создаётся владельцем в консоли Firebase
+    function isStaff() {
+      return signedIn() && exists(/databases/$(database)/documents/staff/$(request.auth.uid))
+        && get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.active == true;
+    }
+
+    // сотрудники: каждый видит свою запись, активный сотрудник видит всех; менять пока можно только в консоли
+    match /staff/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+    }
 
     match /users/{uid} {
       allow read, write: if signedIn() && request.auth.uid == uid;
+      allow read: if isStaff();
     }
 
     match /invites/{code} {
@@ -18,21 +29,23 @@ service cloud.firestore {
       allow delete: if isMember(resource.data.hid);
     }
 
-    // отзывы о приложении: пишет любой вошедший от своего имени, читать можно только в консоли Firebase
+    // отзывы о приложении: пишет любой вошедший от своего имени, читают сотрудники в админке
     match /feedback/{id} {
+      allow read: if isStaff();
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid
         && request.resource.data.size() <= 16
         && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 2000));
     }
 
     match /households/{hid} {
-      allow read: if isMember(hid);
+      // сотрудники видят данные семьи только на чтение: правки из админки появятся позже, вместе с журналом
+      allow read: if isMember(hid) || isStaff();
       // владельца семьи нельзя сменить: остальные поля участники меняют свободно
       allow update: if isMember(hid) && request.resource.data.owner == resource.data.owner;
       allow create: if signedIn() && request.resource.data.owner == request.auth.uid;
 
       match /members/{uid} {
-        allow read: if isMember(hid);
+        allow read: if isMember(hid) || isStaff();
         allow create: if signedIn() && request.auth.uid == uid && (
           get(/databases/$(database)/documents/households/$(hid)).data.owner == uid
           || (request.resource.data.code is string
@@ -47,7 +60,7 @@ service cloud.firestore {
 
       match /{col}/{docId} {
         // фонд наград (funds/reward) есть всегда, удалить его нельзя
-        allow read: if col in ['funds', 'tx', 'wishes'] && isMember(hid);
+        allow read: if col in ['funds', 'tx', 'wishes'] && (isMember(hid) || isStaff());
         allow delete: if col in ['funds', 'tx', 'wishes'] && isMember(hid) && !(col == 'funds' && docId == 'reward');
         // запись — обычная карточка, а не мусор: не больше 60 полей
         allow create, update: if col in ['funds', 'tx', 'wishes'] && isMember(hid) && request.resource.data.size() <= 60;
