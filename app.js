@@ -554,11 +554,11 @@ function lastIncomeKv(){const m=shiftMonth(curMonth(),-1); if(!S.tx.some(t=>t.mo
   const v=sum(S.tx.filter(t=>t.type==='income'&&!t.found&&t.month===m).map(t=>+t.amount||0));
   return `<div class="kv"><div class="k">Доход в ${PREP[+m.slice(5)-1]}</div><div class="v muted">${fmt(v)}</div></div>`}
 function renderNow(){
-  if(!activeFunds().length) return emptyFunds();
+  if(!activeFunds().length) return consentCard()+emptyFunds();
   const P=monthPicture(); const mi=P.mi; const core=P.coreNet>0.5, plans=P.planNet>0.5;
   const C=plans?planCheck(P):null;
   const planLine=!plans?'':C&&C.known&&!C.ok?` На планы по срокам и целям нужно ещё <b>${fmt(P.planGross)}</b>, <span class="neg">при вашем доходе сроки не сходятся</span>.`:` Ещё <b>${fmt(P.planGross)}</b> на планы: сроки по долгам и целям.`;
-  let h=`<section class="hero"><div class="hero-main">${P.coreProgress!==null?ringSvg(core?P.coreProgress:1,!core):''}<div>`;
+  let h=consentCard()+`<section class="hero"><div class="hero-main">${P.coreProgress!==null?ringSvg(core?P.coreProgress:1,!core):''}<div>`;
   if(core){
     h+=`<div class="eyebrow">Ещё нужно заработать в ${PREP[mi]}</div><div class="fig" data-count="${Math.round(P.coreGross)}">${fmt(P.coreGross)}</div>
     <div class="note">На жизнь и минимальные платежи по долгам${P.pct?`, с учётом ${nf.format(P.pct)}% в процентные фонды`:''}.${planLine} <button class="link" data-act="need-why">Из чего складывается</button></div>`;
@@ -572,11 +572,13 @@ function renderNow(){
   const dsum=debtSummary();
   if(dsum) h+=`<button class="goal-chip" data-tab-go="debts"><span class="gi">${ic('trending-down')}</span><span><b>${esc(dsum.title)}</b><span class="note">${esc(dsum.sub)}</span></span>${ic('chevron-right','chev')}</button>`;
   if(S.canWrite) h+=`<div class="btn-row"><button class="btn primary" data-act="open-income">Пришли деньги</button><button class="btn ghost" data-act="open-expense">Потратили</button><button class="btn ghost wide" data-act="new-wish">Хочу купить…</button></div>`;
+  h+=checkCard();
   h+=paymentsBlock();
   const RC=reconcile(); if(RC&&RC.moves.length){S.moves=RC.moves;h+=`<section class="block"><div class="sec-head"><h2>Переложите деньги</h2>${RC.moves.length>2?`<button class="btn sm ghost" data-tab-go="res">Все ${RC.moves.length}</button>`:''}</div><div class="list mvs">${RC.moves.slice(0,2).map(moveRow).join('')}</div></section>`}
   const T=tips(P); T.splice(Math.min(1,T.length),0,...wishTips());
   if(!accounts().length&&S.canWrite) T.push({tone:'info',title:'Укажите, где лежат деньги',text:'Добавьте карты и наличку с остатками. Приложение будет подсказывать, сколько и куда переложить после каждого дохода.',act:{label:'Открыть ресурсы',act:'go-res'}});
   else if(RC&&RC.disc>=1) T.unshift({tone:'warn',title:`${fmt(RC.disc)} на картах не разложены по фондам`,text:'Разложите их, и они пойдут туда, где нужнее.',act:{label:'Разложить',act:'found'}});
+  h+=pmfCard();
   if(T.length){
     // самое важное сверху: проблемы, предупреждения, советы, хорошие новости; видно три, остальное по кнопке
     const rank={bad:0,warn:1,info:2,good:3}; T.forEach((t,k)=>t.k=k); T.sort((a,b)=>(rank[a.tone]??2)-(rank[b.tone]??2)||a.k-b.k);
@@ -733,6 +735,11 @@ function txRow(t){
     const title=t.debt?`Платёж в «${fundName(t.debt)}»`:`Перевод на «${accName(t.to)}»`;
     const who=t.by?`${avatar(t.by)}<span data-who="${esc(t.by)}">${esc(S.names[t.by]||'')}</span>`:'';
     return `<details class="tx"><summary><span class="fi sm k-rest" aria-hidden="true">🔁</span><span class="t-main"><span class="t-title">${esc(title)}</span><br><span class="note">с «${esc(accName(t.from))}»${who?' · ':''}${who}</span></span><span class="t-amt">${fmt(t.amount)}</span></summary><div class="tx-body"><div class="note">Деньги переложены между картами, фонды не изменились.</div>${S.canWrite?`<div class="tx-acts"><button class="btn sm danger" data-act="del-tx" data-id="${esc(t.id)}">${ic('trash')}Удалить</button></div>`:''}</div></details>`;
+  }
+  if(t.type==='check'){
+    const who=t.by?`${avatar(t.by)}<span data-who="${esc(t.by)}">${esc(S.names[t.by]||'')}</span>`:''; const E=Object.entries(t.accs||{});
+    const body=E.map(([id,x])=>{const d=Math.round((+x.act||0)-(+x.exp||0));return `<div class="alloc-line"><span>${esc(accName(id))}</span><span>${fmt(x.act)}${Math.abs(d)>=1?` <span class="note">(${d>0?'+':'−'}${fmt(Math.abs(d))})</span>`:''}</span></div>`}).join('');
+    return `<details class="tx"><summary><span class="fi sm k-rest" aria-hidden="true">🧾</span><span class="t-main"><span class="t-title">Сверка дня</span><br><span class="note">${E.length} ${plural(E.length,'карта','карты','карт')}${who?' · ':''}${who}</span></span><span class="t-amt">${ic('check')}</span></summary><div class="tx-body">${body}${S.canWrite?`<div class="tx-acts"><button class="btn sm danger" data-act="del-tx" data-id="${esc(t.id)}">${ic('trash')}Удалить</button></div>`:''}</div></details>`;
   }
   if(t.type==='paidmark'){
     const who=t.by?`${avatar(t.by)}<span data-who="${esc(t.by)}">${esc(S.names[t.by]||'')}</span>`:'';
@@ -1305,6 +1312,178 @@ function dueIn(y,m,day){const d=new Date(y,m,1);return new Date(d.getFullYear(),
 function durationWord(k){const y=Math.floor(k/12),m=k%12;const ys=y?`${y} ${plural(y,'год','года','лет')}`:'';const ms=m?`${m} ${plural(m,'месяц','месяца','месяцев')}`:'';return [ys,ms].filter(Boolean).join(' ')||'меньше месяца'}
 const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 
+/* ---------- сверка дня ----------
+   Раз в день человек вписывает остатки карт из банка. Разница с записями становится обычными записями:
+   меньше, чем по записям, — тратами из выбранных фондов; больше — доходом или деньгами для фондов.
+   Сама сверка хранится записью type:'check' (accs: {карта: {exp, act}}): по ней считается серия недели. */
+const CHECK_NOTE='Не записано, найдено при сверке';
+const WD=['вс','пн','вт','ср','чт','пт','сб'];
+function checkDays(n=7){const now=new Date(),out=[];for(let k=n-1;k>=0;k--)out.push(isoD(new Date(now.getFullYear(),now.getMonth(),now.getDate()-k)));return out}
+function checkedSet(){return new Set(S.tx.filter(t=>t.type==='check').map(t=>t.date))}
+function checkDots(done){const t0=today();return checkDays(7).map(d=>{const [y,m,dd]=d.split('-').map(Number);return `<span class="cd ${done.has(d)?'on':''} ${d===t0?'today':''}"><i></i><small>${WD[new Date(y,m-1,dd).getDay()]}</small></span>`}).join('')}
+// Фонды, на которые можно отнести «не записанные» траты: самые частые сверху (по тратам за 60 дней)
+function checkFunds(){
+  const since=isoD(new Date(Date.now()-60*864e5)), cnt={};
+  for(const t of S.tx) if(t.type==='expense'&&(t.date||'')>=since) cnt[t.fundId]=(cnt[t.fundId]||0)+1;
+  return activeFunds().filter(f=>(['monthly','reward','rest'].includes(f.kind)||f.kind==='goal'&&!f.isDebt||f.kind==='percent'&&!f.taxOnly))
+    .map((f,i)=>({f,i,n:cnt[f.id]||0})).sort((a,b)=>b.n-a.n||(a.f.kind==='monthly'?0:1)-(b.f.kind==='monthly'?0:1)||a.i-b.i).map(x=>x.f);
+}
+function checkCard(){
+  if(!S.canWrite) return '';
+  if(!accounts().length) return `<section class="check-card"><div class="cc-main"><b>Сверка дня</b><span class="note">Добавьте карты и наличные с остатками. Тогда раз в день хватит сверить их с банком вместо записи каждой покупки.</span></div><button class="btn sm primary" data-act="go-res">Добавить карты</button></section>`;
+  const done=checkedSet(), n=checkDays(7).filter(d=>done.has(d)).length, ok=done.has(today());
+  return `<section class="check-card ${ok?'done':''}"><div class="cc-main"><b>${ok?'Сегодня всё сверено':'Сверка дня'}</b><span class="note">${ok?`За неделю ${n} из 7. Завтра снова 1⁠–⁠2 минуты.`:`Впишите остатки карт из банка, 1⁠–⁠2 минуты. За неделю ${n} из 7.`}</span><div class="cc-dots" role="img" aria-label="Сверок за 7 дней: ${n}">${checkDots(done)}</div></div><button class="btn sm ${ok?'ghost':'primary'}" data-act="open-check">${ok?'Ещё раз':'Сверить'}</button></section>`;
+}
+function openCheck(){
+  const L=accounts(); if(!L.length){S.tab='res';S.enterNext=true;render();return}
+  const exp={}; const ab=accBalances(); L.forEach(a=>exp[a.id]=Math.round(ab[a.id]||0));
+  const funds=checkFunds(), srcs=incomeSources(), fix={};
+  const fundOpts=sel=>funds.map(f=>`<option value="${esc(f.id)}" ${f.id===sel?'selected':''}>${esc(f.name)}</option>`).join('');
+  openSheet(`${sheetHead('Сверка дня')}
+  <p class="note">Откройте приложение банка и впишите, сколько сейчас лежит. Если сумма совпадает, нажмите «Сходится». Пустое поле — карту сегодня не сверяем.</p>
+  <div class="list chk-accs">${L.map(a=>`<div class="row chk-acc"><div class="row-main"><span class="name">${accEmoji(a)} ${esc(a.name)}</span><span class="note">по записям ${fmt(exp[a.id])}</span></div>
+    <div class="chk-line"><input class="chk-in" data-acc="${esc(a.id)}" inputmode="decimal" autocomplete="off" placeholder="Сколько в банке" aria-label="Остаток «${esc(a.name)}» в банке"><button type="button" class="btn sm ghost" data-same="${esc(a.id)}">Сходится</button></div>
+    <div class="chk-fix" data-fix="${esc(a.id)}"></div></div>`).join('')}</div>
+  <div class="err" id="chkErr"></div>
+  <button class="btn primary" id="chkSave">Готово</button>`, sh=>{
+    const val=id=>{const el=sh.querySelector(`.chk-in[data-acc="${id}"]`);const v=el.value.trim();return v===''?null:Math.round(parseAmt(v))};
+    const diff=id=>{const v=val(id);return v===null?null:v-exp[id]};
+    const left=id=>{const F=fix[id];return -diff(id)-sum(F.lines.map(l=>l.amt||0))};
+    const drawFix=id=>{
+      const box=sh.querySelector(`[data-fix="${id}"]`), d=diff(id);
+      if(d===null){box.innerHTML='';delete fix[id];return}
+      if(Math.abs(d)<1){box.innerHTML=`<p class="chk-ok">${ic('check')}Сходится</p>`;delete fix[id];return}
+      if(d<0){
+        const F=fix[id]&&fix[id].mode==='spent'&&fix[id].total===-d?fix[id]:(fix[id]={mode:'spent',total:-d,lines:[{fid:funds[0]?funds[0].id:'',amt:-d}]});
+        const rest=left(id);
+        box.innerHTML=`<p class="chk-q">Не записано трат на <b>${fmt(-d)}</b>. На что ушло?</p>${funds.length?F.lines.map((l,i)=>`<div class="chk-split"><select data-line="${i}" data-acc="${esc(id)}" aria-label="Фонд">${fundOpts(l.fid)}</select><input data-lamt="${i}" data-acc="${esc(id)}" inputmode="decimal" value="${l.amt?nf.format(l.amt):''}" aria-label="Сумма">${F.lines.length>1?`<button type="button" class="icon-btn sm" data-ldel="${i}" data-acc="${esc(id)}" aria-label="Убрать">${ic('x')}</button>`:''}</div>`).join(''):'<p class="note">Сначала добавьте фонды.</p>'}
+          <div class="chk-more"><span class="note ${Math.abs(rest)>=1?'neg':''}" data-left="${esc(id)}">${Math.abs(rest)<1?'Всё разнесено':rest>0?`Осталось разнести ${fmt(rest)}`:`Разнесено на ${fmt(-rest)} больше`}</span><button type="button" class="btn sm ghost" data-ladd="${esc(id)}" ${rest<1?'hidden':''}>${ic('plus')}Ещё фонд</button></div>`;
+        return;
+      }
+      const F=fix[id]&&fix[id].mode!=='spent'?fix[id]:(fix[id]={mode:'income',src:srcs[0]?srcs[0].id:''});
+      F.total=d;
+      box.innerHTML=`<p class="chk-q">На карте на <b>${fmt(d)}</b> больше, чем по записям. Откуда?</p>
+        <div class="seg"><button type="button" data-mode="income" data-acc="${esc(id)}" aria-pressed="${F.mode==='income'}">Пришёл доход</button><button type="button" data-mode="found" data-acc="${esc(id)}" aria-pressed="${F.mode==='found'}">Старые деньги</button></div>
+        ${F.mode==='income'?(srcs.length?`<select data-src="${esc(id)}" aria-label="Источник дохода"><option value="">Без источника</option>${srcs.map(x=>`<option value="${esc(x.id)}" ${x.id===F.src?'selected':''}>${esc(x.name)}</option>`).join('')}</select>`:'')+'<p class="note">Доход разойдётся по фондам как обычно.</p>':'<p class="note">Эти деньги просто не были учтены. Они разойдутся по фондам, налог с них не берётся.</p>'}`;
+    };
+    sh.addEventListener('input',e=>{const t=e.target;
+      if(t.classList.contains('chk-in')){drawFix(t.dataset.acc);return}
+      if(t.dataset.lamt!==undefined){const id=t.dataset.acc, F=fix[id]; F.lines[+t.dataset.lamt].amt=Math.round(parseAmt(t.value));
+        const rest=left(id), el=sh.querySelector(`[data-left="${id}"]`), add=sh.querySelector(`[data-ladd="${id}"]`);
+        el.textContent=Math.abs(rest)<1?'Всё разнесено':rest>0?`Осталось разнести ${fmt(rest)}`:`Разнесено на ${fmt(-rest)} больше`; el.classList.toggle('neg',Math.abs(rest)>=1); add.hidden=rest<1}
+    });
+    sh.addEventListener('change',e=>{const t=e.target;
+      if(t.dataset.line!==undefined) fix[t.dataset.acc].lines[+t.dataset.line].fid=t.value;
+      if(t.dataset.src!==undefined) fix[t.dataset.src].src=t.value;
+    });
+    sh.addEventListener('focusout',e=>{const t=e.target;if(t.classList.contains('chk-in')||t.dataset.lamt!==undefined){const n=parseAmt(t.value);if(t.value.trim()&&!isNaN(n))t.value=nf.format(Math.round(n))}});
+    sh.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b) return;
+      if(b.dataset.same){const el=sh.querySelector(`.chk-in[data-acc="${b.dataset.same}"]`);el.value=nf.format(exp[b.dataset.same]);drawFix(b.dataset.same);return}
+      if(b.dataset.mode){fix[b.dataset.acc].mode=b.dataset.mode;drawFix(b.dataset.acc);return}
+      if(b.dataset.ladd){const id=b.dataset.ladd,F=fix[id],rest=left(id);const used=new Set(F.lines.map(l=>l.fid));const nf_=funds.find(f=>!used.has(f.id))||funds[0];F.lines.push({fid:nf_?nf_.id:'',amt:Math.max(0,rest)});drawFix(id);return}
+      if(b.dataset.ldel!==undefined){const id=b.dataset.acc;fix[id].lines.splice(+b.dataset.ldel,1);drawFix(id);return}
+    });
+    $('#chkSave').addEventListener('click',async()=>{
+      const err=$('#chkErr'); err.textContent='';
+      const ids=L.map(a=>a.id).filter(id=>val(id)!==null);
+      if(!ids.length){err.textContent='Впишите остаток хотя бы одной карты или нажмите «Сходится».';return}
+      for(const id of ids){const d=diff(id); if(d<=-1){const F=fix[id]; if(!F.lines.length||F.lines.some(l=>!l.fid||!(l.amt>0))){err.textContent='Выберите фонд и сумму для каждой строки.';return}
+        if(Math.abs(left(id))>=1){err.textContent=`«${accName(id)}»: разнесите ровно ${fmt(-d)}.`;return}}}
+      const date=today(), month=date.slice(0,7), at=Date.now(); let k=0, spent=0, inc=0, found=0, ok=false; const accs={};
+      // доходы и «старые деньги» раскладываются по очереди: каждый следующий учитывает, что уже получили фонды
+      const base=stats(), extra={}; const get=id=>{const s={...base.get(id)},x=extra[id]||0;s.alloc+=x;s.allocM+=x;return s};
+      const take=d=>{const alloc={};d.rows.forEach(r=>{if(r.give>0){alloc[r.f.id]=r.give;extra[r.f.id]=(extra[r.f.id]||0)+r.give}});if(d.free>0){alloc._free=d.free;extra._free=(extra._free||0)+d.free}return alloc};
+      await write(async()=>{
+        for(const id of ids){
+          const act=val(id), d=act-exp[id]; accs[id]={exp:exp[id],act};
+          if(d<=-1){for(const l of fix[id].lines){await DB.add('tx',{type:'expense',amount:l.amt,fundId:l.fid,from:l.fid,date,month,note:CHECK_NOTE,acc:id,cover:null,acc2:'',by:S.uid||null,createdAt:at+(++k)});spent+=l.amt}}
+          else if(d>=1&&fix[id].mode==='income'){const x=srcs.find(z=>z.id===fix[id].src), taxable=x?x.taxable!==false:true;
+            await DB.add('tx',{type:'income',amount:d,date,month,note:'Найдено при сверке',src:x?x.id:'',taxable,alloc:take(distribute(d,taxable,{get})),acc:id,by:S.uid||null,createdAt:at+(++k)});inc+=d}
+          else if(d>=1){ // деньги уже лежат на карте: остаток карты становится равным банку, а фонды получают эту сумму
+            await saveAccount(id,{bal:act,at:at+(++k)});
+            await DB.add('tx',{type:'income',found:true,amount:d,acc:'',taxable:false,alloc:take(distribute(d,false,{get,noPct:true})),date,month,note:'Деньги на карте учтены при сверке',by:S.uid||null,createdAt:at+(++k)});found+=d}
+        }
+        await DB.add('tx',{type:'check',date,month,accs,by:S.uid||null,createdAt:at+(++k)}); ok=true;
+      },'Сверка записана');
+      if(!ok) return;
+      const done=checkedSet(); done.add(date);
+      setTimeout(()=>openCheckDone({spent,inc,found,n:checkDays(7).filter(d=>done.has(d)).length,done}),250);
+    });
+  });
+}
+const RATE_E=['😣','🙁','😐','🙂','😍'];
+function rateRow(id){return `<div class="rate" id="${id}">${RATE_E.map((e,i)=>`<button type="button" data-rate="${i+1}" aria-pressed="false" aria-label="${i+1} из 5">${e}</button>`).join('')}</div><div class="rate-l"><span>неудобно</span><span>очень удобно</span></div>`}
+function checkTimeField(id){return `<div class="ics-row"><input type="time" id="${id}" data-nofocus="1" value="${esc(LS.get('ff-check-time')||'21:00')}" aria-label="Время напоминания"><button type="button" class="btn ghost" data-act="check-ics" data-time="${id}">${ic('calendar-plus')}В календарь</button></div>`}
+function openCheckDone(r){
+  const askRate=S.uid&&!LS.get('ff-fb-check:'+S.uid), askIcs=!LS.get('ff-check-ics');
+  const parts=[r.spent?`траты ${fmt(r.spent)}`:'',r.inc?`доход ${fmt(r.inc)}`:'',r.found?`учтено ${fmt(r.found)}`:''].filter(Boolean);
+  openSheet(`${sheetHead('Сверка дня')}
+  <div class="chk-done"><div class="chk-big">${ic('check')}</div><h3>Всё сходится</h3><p class="note">${parts.length?`Записано: ${parts.join(', ')}. `:'Записи совпали с банком. '}За неделю ${r.n} из 7.</p><div class="cc-dots">${checkDots(r.done)}</div></div>
+  ${askRate?`<div class="field"><span class="lbl">Насколько удобной была сверка?</span>${rateRow('chkRate')}<div id="chkRateMore" hidden><textarea id="chkRateText" rows="3" placeholder="Что было непонятно или неудобно? Необязательно"></textarea><button type="button" class="btn ghost" id="chkRateSend">Отправить комментарий</button></div></div>`:''}
+  ${askIcs?`<div class="field"><span class="lbl">Напоминать каждый вечер</span>${checkTimeField('chkT')}<span class="note">В календаре телефона появится ежедневное событие со звуком и ссылкой на Поток.</span></div>`:''}
+  <button class="btn primary" data-act="close">Закрыть</button>`,()=>{
+    let rate=0;
+    $('#chkRate')?.addEventListener('click',e=>{const b=e.target.closest('[data-rate]');if(!b||rate)return;rate=+b.dataset.rate;
+      document.querySelectorAll('#chkRate [data-rate]').forEach(x=>x.setAttribute('aria-pressed',String(+x.dataset.rate===rate)));
+      LS.set('ff-fb-check:'+S.uid,'1'); sendFeedback({kind:'check',rating:rate}); $('#chkRateMore').hidden=false; toast('Спасибо за оценку')});
+    $('#chkRateSend')?.addEventListener('click',()=>{const t=$('#chkRateText').value.trim();if(!t)return;sendFeedback({kind:'check-note',rating:rate,text:t});$('#chkRateMore').hidden=true;toast('Спасибо! Комментарий получен')});
+  });
+}
+// Ежедневное напоминание о сверке: событие в календаре телефона, без сервера
+function exportCheckICS(time){
+  const [hh,mm]=String(time||'21:00').split(':').map(Number), now=new Date(), p=n=>String(n).padStart(2,'0');
+  const start=new Date(now.getFullYear(),now.getMonth(),now.getDate(),hh>=0?hh:21,mm>=0?mm:0); if(start<now) start.setDate(start.getDate()+1);
+  const dt=`${start.getFullYear()}${p(start.getMonth()+1)}${p(start.getDate())}T${p(start.getHours())}${p(start.getMinutes())}00`;
+  const stamp=now.toISOString().replace(/[-:]/g,'').replace(/\.\d+/,''), url=location.origin+location.pathname;
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Potok//RU','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:Поток: сверка дня','BEGIN:VEVENT',
+    `UID:ff-check-${S.uid||'me'}@potok`,`DTSTAMP:${stamp}`,`DTSTART:${dt}`,'DURATION:PT5M','RRULE:FREQ=DAILY',`SUMMARY:${icsEsc('Сверка дня в Потоке')}`,
+    `DESCRIPTION:${icsEsc('1⁠–⁠2 минуты: впишите остатки карт из банка. '+url)}`,`URL:${url}`,'TRANSP:TRANSPARENT',
+    'BEGIN:VALARM','ACTION:DISPLAY',`DESCRIPTION:${icsEsc('Сверка дня в Потоке')}`,'TRIGGER:PT0M','END:VALARM','END:VEVENT','END:VCALENDAR'];
+  LS.set('ff-check-time',`${p(start.getHours())}:${p(start.getMinutes())}`); LS.set('ff-check-ics','1');
+  saveFile('sverka-potok.ics','text/calendar;charset=utf-8',L.map(icsFold).join('\r\n')+'\r\n',{calendar:true});
+}
+
+/* ---------- отзывы ----------
+   Пишутся в коллекцию feedback (правила разрешают только создание), читаются в консоли Firebase.
+   kind: free — из меню, check / check-note — после первой сверки, pmf / pmf-note — вопрос Шона Эллиса на 14-й день */
+const APP_VER='i1';
+function sendFeedback(data){
+  const d={uid:S.uid||'',hid:S.hid||'',name:String(S.members[S.uid]||S.myName||'').slice(0,60),at:Date.now(),day:today(),tab:S.tab||'',app:APP_VER,ua:navigator.userAgent.slice(0,160),...data};
+  if(typeof d.text==='string') d.text=d.text.slice(0,2000);
+  return DB.addFeedback(d);
+}
+function openFeedback(){
+  let rate=0;
+  openSheet(`${sheetHead('Отзыв о Потоке')}
+  <p class="note">Это тестовая версия. Ваш отзыв читает автор приложения, и от него прямо зависит, что мы сделаем дальше.</p>
+  <div class="field"><span class="lbl">Насколько удобно пользоваться Потоком?</span>${rateRow('fbRate')}</div>
+  <div class="field"><label for="fbText">Что неудобно или непонятно? Чего не хватает?</label><textarea id="fbText" rows="4" placeholder="Например: не понял, куда делись деньги после дохода"></textarea></div>
+  <div class="err" id="fbErr"></div>
+  <button class="btn primary" id="fbSend">Отправить</button>`,()=>{
+    $('#fbRate').addEventListener('click',e=>{const b=e.target.closest('[data-rate]');if(!b)return;rate=+b.dataset.rate;document.querySelectorAll('#fbRate [data-rate]').forEach(x=>x.setAttribute('aria-pressed',String(+x.dataset.rate===rate)))});
+    $('#fbSend').addEventListener('click',async()=>{const text=$('#fbText').value.trim(); if(!rate&&!text){$('#fbErr').textContent='Поставьте оценку или напишите пару слов.';return}
+      await write(()=>sendFeedback({kind:'free',rating:rate||null,text}),'Спасибо! Отзыв получен')});
+  });
+}
+// Вопрос Шона Эллиса: через 14 дней после первой записи человека, один раз (можно отложить на 3 дня)
+function pmfDue(){
+  if(!S.uid||!S.canWrite||LS.get('ff-pmf:'+S.uid)) return false;
+  if(Date.now()<(+LS.get('ff-pmf-later:'+S.uid)||0)) return false;
+  const mine=S.tx.filter(t=>t.by===S.uid&&+t.createdAt>0).map(t=>+t.createdAt); if(!mine.length) return false;
+  return Date.now()-Math.min(...mine)>=14*864e5;
+}
+function pmfCard(){
+  if(!pmfDue()) return '';
+  return `<section class="card pmf"><b>Один вопрос: как вы будете себя чувствовать, если Потока не станет?</b><div class="pmf-opts">${[['very','Очень расстроюсь'],['some','Немного расстроюсь'],['no','Не расстроюсь']].map(([k,l])=>`<button class="btn sm ghost" data-act="pmf" data-a="${k}">${l}</button>`).join('')}</div><button class="link" data-act="pmf-later">Спросите позже</button></section>`;
+}
+function openPmfNote(answer){
+  openSheet(`${sheetHead('Спасибо за ответ')}
+  <div class="field"><label for="pmfText">Что для вас главное в Потоке? Что улучшить?</label><textarea id="pmfText" rows="4" placeholder="Необязательно"></textarea></div>
+  <button class="btn primary" id="pmfSend">Отправить</button><button class="btn ghost" data-act="close">Пропустить</button>`,()=>{
+    $('#pmfSend').addEventListener('click',async()=>{const t=$('#pmfText').value.trim();if(!t){closeSheet();return}await write(()=>sendFeedback({kind:'pmf-note',answer,text:t}),'Спасибо! Ответ получен')});
+  });
+}
+
 /* ---------- регулярные платежи ---------- */
 // Внесено в банк за текущий месяц: отметки «Внёс» (перевод на долг) и записанные платежи по долгу
 function debtPaidM(id){
@@ -1384,7 +1563,7 @@ function exportCSV(){
   const q=v=>{v=String(v??'');return /[";\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
   const head=['Дата','Тип','Сумма','Источник','Фонд','Из фонда','Комментарий','Кто','Раскладка по фондам'];
   const rows=S.tx.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(t=>{
-    const type=t.type==='income'?(t.found?'Разложено с карт':'Доход'):t.type==='expense'?'Трата':t.type==='move'?(t.debt?'Платёж по долгу':'Перевод между картами'):t.type==='paidmark'?'Отметка об оплате':'Перевод';
+    const type=t.type==='income'?(t.found?'Разложено с карт':'Доход'):t.type==='expense'?'Трата':t.type==='move'?(t.debt?'Платёж по долгу':'Перевод между картами'):t.type==='paidmark'?'Отметка об оплате':t.type==='check'?'Сверка дня':'Перевод';
     const fund=t.type==='expense'?fundName(t.fundId):'';
     const from=t.type==='expense'?(t.from&&t.from!==t.fundId?fundName(t.from):''):t.type==='transfer'?fundName(t.from):'';
     const alloc=Object.entries(t.alloc||{}).filter(([,a])=>a>0).map(([k,a])=>`${fundName(k)}: ${Math.round(a)}`).join(', ');
@@ -1587,6 +1766,13 @@ document.addEventListener('click',async e=>{
   else if(act==='pay-lump'){const f=fundById(a.dataset.id);if(f&&S.canWrite)openExpense(null,{fundId:f.id,amount:Math.round(fstate(f,stats().get).balance),note:'Платёж по долгу'})}
   else if(act==='need-why'){openNeedWhy()}
   else if(act==='more-tips'){S.tipsOpen=!S.tipsOpen;render()}
+  else if(act==='open-check'){if(S.canWrite)openCheck()}
+  else if(act==='check-ics'){const el=$('#'+(a.dataset.time||''));exportCheckICS(el?el.value:'')}
+  else if(act==='feedback'){openFeedback()}
+  else if(act==='accept-docs'){const e=$('#cErr');if(!$('#cTerms').checked||!$('#cOk').checked){e.textContent='Отметьте обе галочки.';return}
+    a.disabled=true;try{await DB.setConsent(S.uid,CONSENT_VER);S.needConsent=false;render();toast('Спасибо, документы приняты')}catch(err){a.disabled=false;e.textContent='Не получилось сохранить. Проверьте интернет и попробуйте ещё раз.'}}
+  else if(act==='pmf'){const ans=a.dataset.a;LS.set('ff-pmf:'+S.uid,'1');sendFeedback({kind:'pmf',answer:ans});render();openPmfNote(ans)}
+  else if(act==='pmf-later'){LS.set('ff-pmf-later:'+S.uid,String(Date.now()+3*864e5));render()}
   else if(act==='pause-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite)setPause(f,true)}
   else if(act==='nocut-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite)write(async()=>{await DB.update('funds',f.id,{noCut:true});f.noCut=true},`Больше не предлагаю сокращать «${f.name}»`)}
   else if(act==='paid-mark'){const f=fundById(a.dataset.id);if(f&&S.canWrite){const date=today();
@@ -2122,7 +2308,8 @@ document.addEventListener('focusout',e=>{
   const isAmt=t.id==='wzInc'||(L==='funds'&&((F==='amount'&&S.wz.funds[+t.dataset.i]?.kind!=='percent')||F==='min'))||(L==='accs'&&F==='bal');
   if(!isAmt)return; const n=parseAmt(t.value); if(n>0){t.value=nf.format(n);if(t.id==='wzInc')S.wz.income=t.value;else S.wz[L][+t.dataset.i][F]=t.value}
 });
-function inviteText(code){const url=location.origin+location.pathname;return `Присоединяйся к нашему семейному бюджету в «Потоке». Открой ${url}, зарегистрируйся, выбери «Присоединиться по коду» и введи код ${code}`}
+function inviteLink(code){return `${location.origin}${location.pathname}?join=${encodeURIComponent(code)}`}
+function inviteText(code){return `Присоединяйся к нашему семейному бюджету в «Потоке»: ${inviteLink(code)}\nЗарегистрируйся по ссылке, и ты сразу попадёшь в нашу семью. Если попросит код: ${code}`}
 async function copyText(t,okMsg){try{await navigator.clipboard.writeText(t);toast(okMsg);return true}catch(e){toast('Не получилось скопировать. Выделите код и скопируйте вручную.');return false}}
 async function shareInvite(code){
   if(!code) return false; const text=inviteText(code);
@@ -2289,11 +2476,13 @@ function renderGate(main){
   if(S.status==='config'){main.innerHTML=`<div class="empty"><h2>Сайт ещё не подключён к базе</h2><p class="muted small">${S.gateErr?esc(S.gateErr):'Заполните файл firebase-config.js ключами вашего проекта Firebase и загрузите его на GitHub.'}</p></div>`;return}
   if(S.status==='auth'){
     const reg=S.authMode==='register';
-    main.innerHTML=`<section class="gate"><div><div class="eyebrow">Семейный бюджет</div><h2 class="gate-h">${reg?'Регистрация':'Вход'}</h2><p class="muted small">${reg?'Каждый член семьи заводит свой аккаунт. Данные будут общими.':'Войдите, чтобы видеть общие фонды семьи.'}</p></div>
+    const inv=LS.get('ff-join');
+    main.innerHTML=`<section class="gate"><div><div class="eyebrow">Семейный бюджет</div><h2 class="gate-h">${reg?'Регистрация':'Вход'}</h2><p class="muted small">${inv?'Вас пригласили в семейный бюджет. Зарегистрируйтесь или войдите, и вы сразу попадёте в него.':reg?'Каждый член семьи заводит свой аккаунт. Данные будут общими.':'Войдите, чтобы видеть общие фонды семьи.'}</p></div>
     <form id="authForm" class="gate-form" novalidate>
       ${reg?`<div class="field"><label for="aName">Как вас зовут</label><input id="aName" autocomplete="given-name" placeholder="Макс"></div>`:''}
       <div class="field"><label for="aEmail">Почта</label><input id="aEmail" type="email" autocomplete="email" inputmode="email" autocapitalize="off"></div>
       <div class="field"><label for="aPw">Пароль</label><input id="aPw" type="password" autocomplete="${reg?'new-password':'current-password'}" ${reg?'placeholder="Не меньше 6 символов"':''}></div>
+      ${reg?docChecks('a'):''}
       <div class="err" id="gErr"></div><p class="note" id="gNote"></p>
       <button class="btn primary" type="submit" id="aGo">${reg?'Создать аккаунт':'Войти'}</button>
     </form>
@@ -2301,7 +2490,12 @@ function renderGate(main){
     return;
   }
   if(S.status==='onboard'){
-    const n=(SEED.funds||[]).length, t=(SEED.tx||[]).length;
+    const n=(SEED.funds||[]).length, t=(SEED.tx||[]).length, inv=LS.get('ff-join')||'';
+    if(inv){main.innerHTML=`<section class="gate"><div><div class="eyebrow">Почти готово</div><h2 class="gate-h">Вас пригласили в семью</h2><p class="muted small">Нажмите «Присоединиться», и вы увидите общий бюджет семьи.</p></div>
+    <div class="card"><div class="field"><label for="oCode">Код приглашения</label><input id="oCode" autocapitalize="characters" autocomplete="off" value="${esc(inv)}"></div>
+      <button class="btn primary" data-act="join-hh">Присоединиться</button></div>
+    <div class="err" id="gErr"></div>
+    <div class="gate-links"><button class="link" data-act="join-skip">Создать свой бюджет</button><button class="link" data-act="logout">Выйти из аккаунта</button></div></section>`;return}
     main.innerHTML=`<section class="gate"><div><div class="eyebrow">Почти готово</div><h2 class="gate-h">Подключите бюджет</h2><p class="muted small">Один человек создаёт бюджет, второй присоединяется по коду.</p></div>
     <div class="card"><h2>Создать семейный бюджет</h2>
       ${n?`<label class="check"><input type="checkbox" id="oSeed" checked> Перенести ${n} фондов${t?` и ${t} ${t===1?'запись':'записей'}`:''} из версии в Claude</label>`:''}
@@ -2323,11 +2517,23 @@ document.addEventListener('submit',e=>{
   const reg=S.authMode==='register'; const email=$('#aEmail').value.trim(), pw=$('#aPw').value;
   if(!email){$('#gErr').textContent='Введите почту.';return}
   gateBusy($('#aGo'),async()=>{
-    if(reg){const name=$('#aName').value.trim(); if(!name){throw {code:'_name'}} S.pendingName=name; await DB.signUp(email,pw,name)}
+    if(reg){const name=$('#aName').value.trim(); if(!name){throw {code:'_name'}} if(!$('#aTerms').checked){throw {code:'_terms'}} if(!$('#aOk').checked){throw {code:'_consent'}} S.pendingName=name; await DB.signUp(email,pw,name,CONSENT_VER)}
     else await DB.signIn(email,pw);
   });
 });
 AUTH_ERR._name='Напишите, как вас зовут: имя видно в истории записей.';
+AUTH_ERR._consent='Отметьте согласие на обработку данных: без него мы не можем хранить ваш бюджет.';
+AUTH_ERR._terms='Примите пользовательское соглашение, чтобы зарегистрироваться.';
+// Версия документов: terms.html, privacy.html, consent.html. Поднимите её, когда документы изменятся: все примут их заново
+const CONSENT_VER='2026-11-16';
+// Две отдельные галочки: согласие на обработку данных по закону оформляется отдельно от соглашения
+function docChecks(p){return `<label class="check consent"><input type="checkbox" id="${p}Terms"><span>Принимаю <a href="terms.html" target="_blank" rel="noopener">пользовательское соглашение</a> и <a href="privacy.html" target="_blank" rel="noopener">политику обработки данных</a></span></label>
+  <label class="check consent"><input type="checkbox" id="${p}Ok"><span>Даю <a href="consent.html" target="_blank" rel="noopener">согласие на обработку персональных данных</a></span></label>`}
+// Кто зарегистрировался раньше или до новой версии документов: карточка на главной, пока не примет
+function consentCard(){
+  if(!S.needConsent) return '';
+  return `<section class="card consent-card"><b>Документы Потока</b><span class="note">Мы подготовили пользовательское соглашение, политику обработки данных и согласие на обработку. Примите их, чтобы и дальше пользоваться Потоком.</span>${docChecks('c')}<div class="err" id="cErr"></div><button class="btn primary" data-act="accept-docs">Принять</button></section>`;
+}
 
 async function onGateAction(act,a){
   if(act==='auth-mode'){S.authMode=S.authMode==='register'?'login':'register';render();return true}
@@ -2337,7 +2543,8 @@ async function onGateAction(act,a){
   if(act==='create-hh'){const useSeed=$('#oSeed')?$('#oSeed').checked:false;
     gateBusy(a,async()=>{const hid=await DB.createHousehold(S.uid,S.myName,useSeed?SEED:null);LS.set('ff-hid:'+S.uid,hid);startHousehold(hid)});return true}
   if(act==='join-hh'){const code=$('#oCode').value.trim(); if(!code){$('#gErr').textContent='Введите код приглашения.';return true}
-    gateBusy(a,async()=>{const hid=await DB.joinHousehold(S.uid,S.myName,code);LS.set('ff-hid:'+S.uid,hid);startHousehold(hid)});return true}
+    gateBusy(a,async()=>{const hid=await DB.joinHousehold(S.uid,S.myName,code);LS.del('ff-join');LS.set('ff-hid:'+S.uid,hid);startHousehold(hid)});return true}
+  if(act==='join-skip'){LS.del('ff-join');render();return true}
   if(act==='settings'){openSettings();return true}
   return false;
 }
@@ -2347,7 +2554,7 @@ function openSettings(){
   const ids=Object.keys(S.members);
   openSheet(`${sheetHead('Семья')}
   <div class="field"><label>Код приглашения</label><div class="code" id="sCode">${esc(code)}</div>
-  <p class="note">Второй человек регистрируется на этом сайте, выбирает «Присоединиться по коду» и вводит этот код.</p>
+  <p class="note">Отправьте приглашение: по ссылке второй человек регистрируется и сразу попадает в вашу семью. Код нужен, только если ссылка не открылась.</p>
   <div class="btn-row"><button class="btn primary wide" id="sShare">${ic('send')}Отправить приглашение</button><button class="btn ghost" id="sCopy">Скопировать</button><button class="btn ghost" id="sNew">Новый код</button></div></div>
   <div class="field"><label>Участники</label><div class="list">${ids.map(id=>`<div class="row"><div class="row-main"><span class="name">${esc(S.members[id]||'Без имени')}</span><span class="note">${id===S.uid?'вы':''}</span></div></div>`).join('')}</div></div>
   <div class="field"><label for="sName">Ваше имя</label><input id="sName" data-nofocus="1" value="${esc(S.members[S.uid]||S.myName||'')}"></div>
@@ -2357,7 +2564,10 @@ function openSettings(){
   <div class="field"><span class="lbl">Тема</span><div class="seg three">${[['auto','monitor-smartphone','Авто'],['light','sun','Светлая'],['dark','moon','Тёмная']].map(([k,i,l])=>`<button type="button" data-theme-set="${k}" aria-pressed="${curTheme()===k}">${ic(i)}${l}</button>`).join('')}</div><span class="note">«Авто» следует за настройкой телефона.</span></div>
   <div class="field"><span class="lbl">Напоминания</span><button class="btn ghost" data-act="ics">${ic('calendar-plus')}Платежи в календарь телефона</button><span class="note">Каждый платёж с указанным днём станет ежемесячным событием с напоминанием накануне. Если поменяете дни или суммы, добавьте файл заново.</span></div>
   <div class="field"><span class="lbl">Данные</span><div class="btn-row"><button class="btn ghost" data-act="export-csv">${ic('file-spreadsheet')}Записи в CSV</button><button class="btn ghost" data-act="export-json">${ic('file-braces')}Копия JSON</button></div><span class="note">CSV открывается в Excel и Google Таблицах. JSON — полная копия бюджета на случай сбоя или переезда.</span></div>
+  <div class="field"><span class="lbl">Сверка дня</span>${checkTimeField('sChkT')}<span class="note">Ежедневное событие в календаре телефона с напоминанием сверить остатки.</span></div>
+  <button class="btn primary" data-act="feedback">${ic('message-square')}Отзыв о Потоке</button>
   <button class="btn ghost" data-act="tour">${ic('lightbulb')}Показать подсказки</button>
+  <div class="field"><span class="lbl">Документы</span><div class="doc-links"><a href="terms.html" target="_blank" rel="noopener">Пользовательское соглашение</a><a href="privacy.html" target="_blank" rel="noopener">Политика обработки данных</a><a href="consent.html" target="_blank" rel="noopener">Согласие на обработку данных</a></div></div>
   <button class="btn ghost" data-act="refresh-app">${ic('refresh-cw')}Обновить приложение</button>
   <button class="btn ghost" data-act="wz-restart">Пройти настройку заново</button>
   <div class="err" id="sErr"></div>
@@ -2390,6 +2600,7 @@ function startHousehold(hid){
   let gotF=false,gotT=false,gotH=false;
   const done=()=>{
     if(gotF&&gotT&&gotH&&S.status==='loading'){
+      LS.del('ff-join');   // уже в семье: ссылка-приглашение больше не нужна
       if(!(S.household&&S.household.setupDone)&&!S.funds.length){S.wz=newWizard('new');S.status='setup'}else{S.status='ready';ensureReward()}
       S.enterNext=true; render(); return;
     }
@@ -2404,6 +2615,9 @@ function startHousehold(hid){
   unsubs.push(DB.watchHousehold(h=>{S.household=h;gotH=true;done()},()=>{gotH=true;done()}));
 }
 
+// ссылка-приглашение ?join=КОД: запоминаем код до входа и убираем его из адреса
+{const u=new URL(location.href), j=(u.searchParams.get('join')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(j){LS.set('ff-join',j);S.authMode='register';u.searchParams.delete('join');history.replaceState(null,'',u.pathname+u.search+u.hash)}}
 document.querySelectorAll('[data-ic]').forEach(el=>{el.outerHTML=ic(el.dataset.ic)});
 $('#setBtn').innerHTML=ic('menu');
 render();
@@ -2424,6 +2638,7 @@ render();
     if(known) startHousehold(known);
     let prof=null; try{prof=await DB.getProfile(u.uid)}catch(e){if(known)return}
     if(prof&&prof.name&&!S.myName)S.myName=prof.name;
+    S.needConsent=!!prof&&prof.consentVer!==CONSENT_VER; if(S.needConsent&&S.status==='ready')renderSoon();
     if(!prof||!prof.hid){LS.del(hk);if(known)stopWatching();S.status='onboard';render();return}
     LS.set(hk,prof.hid);
     if(prof.hid!==known) startHousehold(prof.hid);

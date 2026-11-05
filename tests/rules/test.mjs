@@ -61,5 +61,15 @@ await t('НОВОЕ: фонд наград (funds/reward) создать и ме
   await assertSucceeds(updateDoc(doc(d,'households/h1/funds/reward'), { value:15 }));
   await assertFails(deleteDoc(doc(d,'households/h1/funds/reward')));
   await assertSucceeds(deleteDoc(doc(d,'households/h1/funds/f1'))); });
+await t('отзывы: вошедший пишет отзыв от своего имени, читать и менять нельзя', async () => { const d = as('bob');
+  await assertSucceeds(setDoc(doc(d,'feedback/f1'), { uid:'bob', hid:'h1', kind:'free', rating:4, text:'Удобно', at:1 }));
+  await assertFails(getDoc(doc(d,'feedback/f1')));
+  await assertFails(updateDoc(doc(d,'feedback/f1'), { text:'x' }));
+  await assertFails(deleteDoc(doc(d,'feedback/f1'))); });
+await t('отзывы: чужое имя, без входа и слишком длинный текст не проходят', async () => {
+  await assertFails(setDoc(doc(as('bob'),'feedback/f2'), { uid:'alice', kind:'free' }));
+  await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(),'feedback/f3'), { uid:'', kind:'free' }));
+  await assertFails(setDoc(doc(as('bob'),'feedback/f4'), { uid:'bob', text:'x'.repeat(2001) }));
+  await assertSucceeds(setDoc(doc(as('bob'),'feedback/f5'), { uid:'bob', kind:'pmf', answer:'very' })); });
 console.log(results.map(r => r.join(' ')).join('\n')); console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
 await env.cleanup(); process.exit(0);

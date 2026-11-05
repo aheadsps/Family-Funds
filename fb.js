@@ -29,10 +29,16 @@ export function onAuth(cb) {
   return A.onAuthStateChanged(auth, u => cb(u ? { uid: u.uid, email: u.email, name: u.displayName || '' } : null));
 }
 export function signIn(email, pw) { return A.signInWithEmailAndPassword(auth, email, pw); }
-export async function signUp(email, pw, name) {
+// consent: версия документов (соглашение, политика, согласие), которые человек принял при регистрации
+export async function signUp(email, pw, name, consent) {
   const cred = await A.createUserWithEmailAndPassword(auth, email, pw);
   if (name) { try { await A.updateProfile(cred.user, { displayName: name }); } catch (e) {} }
+  if (consent) { try { await setConsent(cred.user.uid, consent); } catch (e) {} }
   return cred;
+}
+// Принятие документов: пользовательское соглашение и согласие на обработку данных, с датой и версией
+export function setConsent(uid, ver) {
+  return F.setDoc(d('users', uid), { consentAt: Date.now(), consentVer: ver, termsAt: Date.now(), termsVer: ver }, { merge: true });
 }
 export function resetPassword(email) { return A.sendPasswordResetEmail(auth, email); }
 export function signOut() { hid = null; return A.signOut(auth); }
@@ -56,7 +62,7 @@ export async function createHousehold(uid, name, seed) {
   await F.setDoc(ref, { owner: uid, inviteCode: code, createdAt: Date.now() });
   await F.setDoc(d('households', ref.id, 'members', uid), { name: name || '', joinedAt: Date.now() });
   await F.setDoc(d('invites', code), { hid: ref.id });
-  await F.setDoc(d('users', uid), { hid: ref.id, name: name || '' });
+  await F.setDoc(d('users', uid), { hid: ref.id, name: name || '' }, { merge: true });
   if (seed) {
     const items = [];
     for (const f of seed.funds || []) items.push(['funds', f]);
@@ -81,7 +87,7 @@ export async function joinHousehold(uid, name, code) {
   if (!inv.exists()) throw { code: 'bad-code' };
   const h = inv.data().hid;
   await F.setDoc(d('households', h, 'members', uid), { name: name || '', code, joinedAt: Date.now() });
-  await F.setDoc(d('users', uid), { hid: h, name: name || '' });
+  await F.setDoc(d('users', uid), { hid: h, name: name || '' }, { merge: true });
   return h;
 }
 
@@ -117,3 +123,5 @@ export function set(col, id, data) { return fire(F.setDoc(d('households', hid, c
 export function setHousehold(data) { return fire(F.updateDoc(d('households', hid), data)); }
 export function update(col, id, data) { return fire(F.updateDoc(d('households', hid, col, id), data)); }
 export function del(col, id) { return fire(F.deleteDoc(d('households', hid, col, id))); }
+// Отзывы: отдельная коллекция, приложение только пишет, читает владелец в консоли Firebase
+export function addFeedback(data) { fire(F.addDoc(F.collection(db, 'feedback'), data)); return Promise.resolve(); }
