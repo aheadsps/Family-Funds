@@ -8,14 +8,14 @@ const L = fs.readFileSync(new URL('../../app.js', import.meta.url), 'utf8').spli
 const idx = re => { const i = L.findIndex(l => re.test(l)); assert.ok(i >= 0, 'не найдено: ' + re); return i; };
 const block = (from, to) => L.slice(idx(from), idx(to)).join('\n');
 const core = L.slice(3, idx(/^\/\* -+ render -+ \*\//)).join('\n');
-const debts = block(/^const stratOf/, /^function debtSummary/);
+const debts = block(/^const STRATS=/, /^function debtSummary/);
 const eta = block(/^function etaSim/, /^function wzMetrics/);
 const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
 const pend = block(/^function accounts\(\)/, /^function moveTitle/);
 const order = block(/^const FTIERS=/, /^function renderFunds/) + '\n' + block(/^function reorderGroup/, /^async function moveFund/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
-const { checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {debtList,debtAdvice,debtTip,canPause,checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
+const { debtList, debtAdvice, debtTip, canPause, checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -542,4 +542,46 @@ test('сверка: фонды для не записанных трат, час
   assert.equal(ids.at(0), 'food');
   assert.ok(!ids.includes('cc') && !ids.includes('tax'));
   assert.ok(ids.includes('rest'));
+});
+
+/* ---------- кредиты и очередь долгов ---------- */
+test('платёж за машину не ставится на паузу и не предлагается к сокращению', () => {
+  const car = { id: 'car', name: 'Платёж за машину', kind: 'monthly', value: 44000 };
+  setup([flat, car, { id: 'gym', name: 'Спортзал', kind: 'monthly', value: 3000 }, card, rest]);
+  assert.equal(canPause(car), false);
+  assert.equal(canPause({ id: 'pool', name: 'Бассейн Мии', kind: 'monthly', value: 6000 }), true);
+  const t = cutTip(monthPicture());
+  assert.ok(t && t.title.includes('Спортзал'));
+});
+
+test('кредит, заведённый как обычный расход, подсказка предлагает сделать его долгом', () => {
+  setup([flat, { id: 'car', name: 'Машина', kind: 'monthly', value: 44000 }, card, rest]);
+  const t = tips(monthPicture()).find(x => x.title.includes('похож на кредит'));
+  assert.ok(t); assert.equal(t.act.id, 'car');
+  setup([flat, { id: 'car', name: 'Машина', kind: 'monthly', value: 44000, notLoan: true }, card, rest]);
+  assert.ok(!tips(monthPicture()).some(x => x.title.includes('похож на кредит')));
+});
+
+test('куда отдавать лишние деньги: кредитка с высокой ставкой первой, хоть машина и дольше', () => {
+  const cc = { id: 'cc', name: 'Кредитка', kind: 'debt', value: 80000, minPay: 5000, rate: 32 };
+  const car = { id: 'car', name: 'Кредит за машину', kind: 'debt', value: 2000000, minPay: 44000, rate: 18 };
+  setup([car, cc, rest]);
+  const a = debtAdvice(null, 100000);
+  assert.equal(a.target.f.id, 'cc');
+  assert.equal(a.next.f.id, 'car');
+  assert.equal(a.per.at(0).save, 3200);
+  assert.equal(a.per.at(1).save, 1800);
+  assert.ok(a.closeIn >= 1 && a.closeIn <= 3);       // кредитка закрывается за пару месяцев
+  // каскад «Лавиной» выгоднее, чем вкладывать лишнее сначала в машину
+  const firstCar = simulate('custom', 100000, debtList());
+  const aval = simulate('avalanche', 100000, debtList());
+  assert.ok(aval.interest < firstCar.interest);
+  assert.ok(a.curExtra > 0);                          // текущая очередь (машина первой) переплачивает
+});
+
+test('совет не строится, пока у долга нет ставки, и подсказка на главной молчит', () => {
+  setup([{ id: 'a', name: 'Долг другу', kind: 'debt', value: 50000 }, { id: 'b', name: 'Кредитка', kind: 'debt', value: 80000, minPay: 5000, rate: 30 }, rest]);
+  const a = debtAdvice(null, 50000);
+  assert.equal(a.noRate.length, 1);
+  assert.equal(debtTip(), null);
 });
