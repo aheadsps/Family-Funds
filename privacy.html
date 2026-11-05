@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Поток: памятка о данных</title>
+<meta name="theme-color" content="#F1F6FA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0A1520" media="(prefers-color-scheme: dark)">
+<style>
+@font-face{font-family:"Unbounded";src:url(unbounded.woff) format("woff");font-weight:500 700;font-display:swap}
+@font-face{font-family:"Golos Text";src:url(golos-cyrillic.woff2) format("woff2");font-weight:400 700;font-display:swap;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:"Golos Text";src:url(golos-latin.woff2) format("woff2");font-weight:400 700;font-display:swap;unicode-range:U+0000-00FF,U+2000-206F}
+:root{--bg:#F1F6FA;--surface:#FFFFFF;--ink:#0F2233;--muted:#4D6275;--line:#D3E0EA;--accent:#1D5FA6}
+@media (prefers-color-scheme: dark){:root{--bg:#0A1520;--surface:#111F2E;--ink:#E6EEF5;--muted:#9AB0C2;--line:#243B50;--accent:#6DB5F0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Golos Text",system-ui,sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:680px;margin:0 auto;padding:24px 16px 48px}
+h1{font-family:"Unbounded",system-ui,sans-serif;font-size:24px;line-height:1.25;margin:8px 0 4px}
+h2{font-size:17px;margin:28px 0 8px}
+p,li{margin:0 0 10px}
+ul{padding-left:20px;margin:0 0 10px}
+.muted{color:var(--muted);font-size:14px}
+.note{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:16px 0}
+a{color:var(--accent)}
+.back{display:inline-block;margin-bottom:8px;font-size:14px}
+</style>
+</head>
+<body>
+<main>
+<a class="back" href="./">← В Поток</a>
+<h1>Памятка о данных</h1>
+<p class="muted">Версия для закрытой фокус-группы, ноябрь 2026. Перед открытым запуском памятка будет обновлена, и мы попросим согласие заново.</p>
+
+<div class="note">Коротко: мы храним только то, что нужно для вашего семейного бюджета. Не продаём и никому не передаём данные. Удалим всё по вашей просьбе.</div>
+
+<h2>Что мы храним</h2>
+<ul>
+<li>Почту и пароль для входа. Пароль хранится у Google в зашифрованном виде, мы его не видим.</li>
+<li>Имя, которое вы указали. Его видят участники вашей семьи в истории записей. Можно указать любое.</li>
+<li>Данные бюджета: фонды, доходы, траты, остатки карт, сверки, желания.</li>
+<li>Отзывы, которые вы отправляете из приложения, вместе с датой, разделом приложения и типом устройства.</li>
+</ul>
+
+<h2>Зачем</h2>
+<ul>
+<li>Чтобы приложение работало: раскладывало доходы, считало фонды и долги, показывало подсказки.</li>
+<li>Чтобы у семьи был общий бюджет на нескольких телефонах.</li>
+<li>Чтобы улучшать приложение по вашим отзывам и по тому, как часто используются его функции.</li>
+</ul>
+
+<h2>Где хранятся данные</h2>
+<p>Сейчас данные хранятся в сервисе Google Firebase. Его серверы могут находиться за пределами России. Перед открытым запуском сервис переедет на серверы в России.</p>
+
+<h2>Кто видит данные</h2>
+<ul>
+<li>Участники вашей семьи в приложении: все видят общий бюджет.</li>
+<li>Автор приложения: технически имеет доступ к базе. Заглядывает в данные только чтобы исправить ошибку, о которой вы сообщили, и читает отзывы.</li>
+<li>Больше никто. Рекламы и передачи данных третьим лицам нет.</li>
+</ul>
+
+<h2>Сколько храним</h2>
+<p>Пока вы пользуетесь приложением. По вашей просьбе удалим аккаунт и данные бюджета в течение 30 дней. Если в семье остаются другие участники, общий бюджет останется у них.</p>
+
+<h2>Ваши права</h2>
+<ul>
+<li>Скачать свои данные: меню → «Записи в CSV» или «Копия данных».</li>
+<li>Исправить имя: меню → «Семья».</li>
+<li>Отозвать согласие и удалить данные: напишите через «Отзыв о Потоке» в меню или в чат фокус-группы.</li>
+</ul>
+
+<h2>Согласие</h2>
+<p>Отмечая галочку при регистрации, вы соглашаетесь на обработку перечисленных данных для указанных целей на время участия в фокус-группе. Согласие можно отозвать в любой момент, как описано выше.</p>
+</main>
+</body>
+</html>

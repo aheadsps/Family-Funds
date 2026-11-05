@@ -1,7 +1,7 @@
 // Файлы сайта отдаются из кэша сразу (без белого экрана на запуске) и обновляются в фоне:
 // новая версия откроется при следующем запуске. Без сети работает из кэша.
 // Библиотеки Firebase кэшируются навсегда (их адрес содержит версию).
-const CACHE = 'potok-v14';
+const CACHE = 'potok-v15';
 const SHELL = ['./', './index.html', './app.js', './icons.js', './fb.js', './firebase-config.js', './seed.js', './unbounded.woff', './golos-cyrillic.woff2', './golos-latin.woff2',
   './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 const FB = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js']
@@ -31,7 +31,9 @@ self.addEventListener('fetch', e => {
   if (url.origin === self.location.origin) {
     e.respondWith((async () => {
       const c = await caches.open(CACHE);
-      const key = req.mode === 'navigate' ? './index.html' : req;
+      // переходы на сайт отдаются из кэша как index.html; отдельные страницы (privacy.html) идут как есть
+      const page = req.mode === 'navigate' && /\.html$/.test(url.pathname) && !url.pathname.endsWith('/index.html');
+      const key = req.mode === 'navigate' && !page ? './index.html' : req;
       const cached = await c.match(key, { ignoreSearch: true });
       const fresh = fetch(req).then(res => {
         if (res.ok) {

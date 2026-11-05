@@ -18,6 +18,13 @@ service cloud.firestore {
       allow delete: if isMember(resource.data.hid);
     }
 
+    // отзывы о приложении: пишет любой вошедший от своего имени, читать можно только в консоли Firebase
+    match /feedback/{id} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.size() <= 16
+        && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 2000));
+    }
+
     match /households/{hid} {
       allow read: if isMember(hid);
       // владельца семьи нельзя сменить: остальные поля участники меняют свободно

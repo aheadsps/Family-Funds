@@ -14,8 +14,8 @@ const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
 const pend = block(/^function accounts\(\)/, /^function moveTitle/);
 const order = block(/^const FTIERS=/, /^function renderFunds/) + '\n' + block(/^function reorderGroup/, /^async function moveFund/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
-const { paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
+const { checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -504,4 +504,42 @@ test('пока полных месяцев меньше двух, берётся
   assert.deepEqual([incomeBasis().src, incomeBasis().inc], ['set', 400000]);
   S.household = {};
   assert.deepEqual([incomeBasis().src, incomeBasis().inc], ['hist', 300000]);
+});
+
+/* ---------- сверка дня ---------- */
+test('запись сверки не меняет фонды, карты и доход по опыту', () => {
+  withCards([food100, rent, dKredit, rest], [income100]);
+  const before = { cards: cardSum(), funds: fundSum(), pend: pendSum() };
+  S.tx.push({ id: 'c1', type: 'check', date: day, month: m, accs: { c1: { exp: 100, act: 100 } }, by: 'u', createdAt: 9 });
+  assert.deepEqual({ cards: cardSum(), funds: fundSum(), pend: pendSum() }, before);
+  balanced();
+});
+
+test('сверка: не записанная трата, внесённая по разнице, сводит карту с банком', () => {
+  withCards([food100, rent, dKredit, rest], [income100]);
+  // в банке 88 вместо 100: 12 ₽ ушли на еду и не были записаны
+  S.tx.push({ id: 'e', type: 'expense', amount: 12, fundId: 'food', from: 'food', acc: 'c1', note: 'Не записано, найдено при сверке', date: day, month: m, createdAt: 3 });
+  S.tx.push({ id: 'c', type: 'check', date: day, month: m, accs: { c1: { exp: 100, act: 88 } }, createdAt: 4 });
+  assert.equal(accBalances().c1, 88);
+  assert.equal(fstate(food100, stats().get).balance, 18);
+  balanced();
+});
+
+test('серия недели: дни со сверкой считаются по датам, кто бы ни сверял', () => {
+  setup([rest]);
+  const d = checkDays(7);
+  assert.equal(d.length, 7);
+  S.tx = [{ type: 'check', date: d.at(-1), by: 'a' }, { type: 'check', date: d.at(-1), by: 'b' }, { type: 'check', date: d.at(2), by: 'a' }, { type: 'expense', date: d.at(3) }];
+  assert.equal(d.filter(x => checkedSet().has(x)).length, 2);
+});
+
+test('сверка: фонды для не записанных трат, частые сверху, без долгов и налога', () => {
+  const debt = { id: 'cc', name: 'Кредитка', kind: 'debt', value: 1000, minPay: 100 };
+  setup([{ ...tax, taxOnly: true }, rent, food100, debt, rest], [
+    { id: 'a', type: 'expense', amount: 1, fundId: 'food', from: 'food', date: day, month: m },
+    { id: 'b', type: 'expense', amount: 1, fundId: 'food', from: 'food', date: day, month: m }]);
+  const ids = checkFunds().map(f => f.id);
+  assert.equal(ids.at(0), 'food');
+  assert.ok(!ids.includes('cc') && !ids.includes('tax'));
+  assert.ok(ids.includes('rest'));
 });
