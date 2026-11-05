@@ -14,8 +14,8 @@ const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
 const pend = block(/^function accounts\(\)/, /^function moveTitle/);
 const order = block(/^const FTIERS=/, /^function renderFunds/) + '\n' + block(/^function reorderGroup/, /^async function moveFund/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {debtList,debtAdvice,debtTip,canPause,checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
-const { debtList, debtAdvice, debtTip, canPause, checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {quickSpends,noteFund,debtList,debtAdvice,debtTip,canPause,checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
+const { quickSpends, noteFund, debtList, debtAdvice, debtTip, canPause, checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -584,4 +584,56 @@ test('совет не строится, пока у долга нет ставк
   const a = debtAdvice(null, 50000);
   assert.equal(a.noRate.length, 1);
   assert.equal(debtTip(), null);
+});
+
+/* ---------- частые траты одним касанием ---------- */
+const dAgo = n => { const d = new Date(Date.now() - n * 864e5); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const ex = (id, fundId, amount, ago, extra = {}) => ({ id, type: 'expense', fundId, from: fundId, amount, date: dAgo(ago), month: dAgo(ago).slice(0, 7), createdAt: 1000 - ago, ...extra });
+
+test('частые траты: одна сумма в разные дни становится кнопкой, один день и разные суммы нет', () => {
+  const cafe = { id: 'cafe', name: 'Кофе и перекусы', kind: 'monthly', value: 4000 };
+  setup([food, cafe, rest], [
+    ex('a', 'cafe', 250, 1, { note: 'Кофе' }), ex('b', 'cafe', 250, 3), ex('c', 'cafe', 250, 5),
+    ex('d', 'food', 840, 2), ex('e', 'food', 1210, 4), ex('f', 'food', 530, 6),
+    ex('g', 'rest', 100, 2), ex('h', 'rest', 100, 2)]);
+  const q = quickSpends();
+  const amt = q.filter(x => x.type === 'amt');
+  assert.equal(amt.length, 1);
+  assert.deepEqual([amt[0].fundId, amt[0].amount, amt[0].label], ['cafe', 250, 'Кофе']);
+  // еда без постоянной суммы: кнопка фонда, которая откроет окно траты
+  assert.ok(q.some(x => x.type === 'fund' && x.fundId === 'food'));
+  // две траты за один день не повтор
+  assert.ok(!q.some(x => x.fundId === 'rest' && x.type === 'amt'));
+});
+
+test('частые траты: регулярный платёж, сверка, чужой фонд, долги и старые записи не попадают', () => {
+  const pool = { id: 'pool', name: 'Бассейн', kind: 'monthly', value: 6000 };
+  setup([pool, food, card, rest], [
+    ex('a', 'pool', 6000, 3), ex('b', 'pool', 6000, 33),
+    ex('c', 'food', 700, 1, { note: 'Не записано, найдено при сверке' }), ex('d', 'food', 700, 2, { note: 'Не записано, найдено при сверке' }),
+    ex('e', 'food', 300, 1, { from: 'rest' }), ex('f', 'food', 300, 2, { from: 'rest' }),
+    ex('g', 'cc', 5000, 4), ex('h', 'cc', 5000, 34),
+    ex('i', 'rest', 90, 120), ex('j', 'rest', 90, 130)]);
+  assert.deepEqual(quickSpends(), []);
+});
+
+test('частые траты: не больше шести кнопок, суммы идут первыми', () => {
+  const fs = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => ({ id, name: 'Фонд ' + id, kind: 'monthly', value: 100000 }));
+  const tx = [];
+  fs.forEach((f, i) => { tx.push(ex(f.id + '1', f.id, 100 + i, 1), ex(f.id + '2', f.id, 100 + i, 2), ex(f.id + '3', f.id, 555 + i, 3)); });
+  setup(fs, tx);
+  const q = quickSpends();
+  assert.equal(q.length, 6);
+  assert.deepEqual(q.slice(0, 4).map(x => x.type), ['amt', 'amt', 'amt', 'amt']);
+  assert.deepEqual(q.slice(4).map(x => x.type), ['fund', 'fund']);
+});
+
+test('подсказка фонда по комментарию: берётся последняя запись, регистр и пробелы не важны', () => {
+  setup([food, { id: 'cafe', name: 'Кофе', kind: 'monthly', value: 4000 }, rest], [
+    ex('a', 'food', 300, 9, { note: 'Кофе утром' }), ex('b', 'cafe', 250, 2, { note: 'кофе утром ' }),
+    ex('c', 'food', 1, 1, { note: 'Не записано, найдено при сверке' })]);
+  assert.deepEqual(noteFund('  Кофе утром'), { fundId: 'cafe', amount: 250 });
+  assert.equal(noteFund('Такси'), null);
+  assert.equal(noteFund('к'), null);
+  assert.equal(noteFund('Не записано, найдено при сверке'), null);
 });

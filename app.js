@@ -619,6 +619,7 @@ function renderNow(){
   const dsum=debtSummary();
   if(dsum) h+=`<button class="goal-chip" data-tab-go="debts"><span class="gi">${ic('trending-down')}</span><span><b>${esc(dsum.title)}</b><span class="note">${esc(dsum.sub)}</span></span>${ic('chevron-right','chev')}</button>`;
   if(S.canWrite) h+=`<div class="btn-row"><button class="btn primary" data-act="open-income">Пришли деньги</button><button class="btn ghost" data-act="open-expense">Потратили</button><button class="btn ghost wide" data-act="new-wish">Хочу купить…</button></div>`;
+  h+=quickBlock();
   h+=checkCard();
   h+=paymentsBlock();
   const RC=reconcile(); if(RC&&RC.moves.length){S.moves=RC.moves;h+=`<section class="block"><div class="sec-head"><h2>Переложите деньги</h2>${RC.moves.length>2?`<button class="btn sm ghost" data-tab-go="res">Все ${RC.moves.length}</button>`:''}</div><div class="list mvs">${RC.moves.slice(0,2).map(moveRow).join('')}</div></section>`}
@@ -980,7 +981,8 @@ function openExpense(tx,preset){
   const srcSel=isEdit&&tx.from&&tx.from!==tx.fundId?tx.from:'';
   const amt0=isEdit?nf.format(tx.amount):preset.amount>0?nf.format(preset.amount):'';
   const L=accounts(); let accTouched=isEdit&&!!tx.acc;
-  openSheet(`${sheetHead(isEdit?'Изменить трату':preset.fundId?'Записать платёж':'Потратили')}${isEdit||preset.fundId?'':typeSeg('expense')}
+  const asPay=!isEdit&&preset.fundId&&!preset.quick;
+  openSheet(`${sheetHead(isEdit?'Изменить трату':asPay?'Записать платёж':'Потратили')}${isEdit||asPay?'':typeSeg('expense')}
   <div class="field"><label for="exAmt">Сумма</label><input class="big" id="exAmt" inputmode="decimal" placeholder="0 ₽" autocomplete="off" value="${amt0}"></div>
   <div class="field"><label for="exCat">На что потратили</label><select id="exCat">${catList.map(f=>`<option value="${esc(f.id)}" ${f.id===catSel?'selected':''}>${esc(fundEmoji(f))} ${esc(f.name)}</option>`).join('')}</select></div>
   <div class="field"><label for="exSrc">Из какого фонда взяли деньги</label><select id="exSrc"><option value="">Из этого же фонда</option>${srcOpts.map(o=>`<option value="${esc(o.id)}" ${o.id===srcSel?'selected':''}>${esc(o.name)} · ${fmt(o.bal)}</option>`).join('')}</select></div>
@@ -1029,7 +1031,15 @@ function openExpense(tx,preset){
       if(cat.kind==='goal'&&srcId===cat.id) lines.push('Цель не просит докладывать потраченное: накопленная сумма не уменьшится.');
       $('#exHint').innerHTML=lines.map(l=>`<p>${l}</p>`).join('');
     };
-    ['#exAmt','#exCat','#exSrc'].forEach(s=>$(s).addEventListener(s==='#exAmt'?'input':'change',()=>{if(s!=='#exAmt')covPick=null;hint()}));
+    let catTouched=isEdit||!!preset.fundId;
+    ['#exAmt','#exCat','#exSrc'].forEach(s=>$(s).addEventListener(s==='#exAmt'?'input':'change',()=>{if(s==='#exCat')catTouched=true;if(s!=='#exAmt')covPick=null;hint()}));
+    // комментарий, который уже встречался: фонд и привычная сумма подставляются сами, пока человек не выбрал фонд руками
+    if(!isEdit) $('#exNote').addEventListener('input',()=>{
+      if(catTouched) return; const m=noteFund($('#exNote').value); if(!m||!catList.some(f=>f.id===m.fundId&&f.kind!=='debt')) return;
+      $('#exCat').value=m.fundId; $('#exSrc').value=''; covPick=null;
+      if(!$('#exAmt').value.trim()&&m.amount>0) $('#exAmt').value=nf.format(m.amount);
+      hint();
+    });
     $('#exCov').addEventListener('change',()=>{covPick=$('#exCov').value;hint()});
     $('#exAcc')?.addEventListener('change',()=>{accTouched=true});
     $('#exAmt').addEventListener('blur',()=>{const n=parseAmt($('#exAmt').value);if(n)$('#exAmt').value=nf.format(n)});
@@ -1376,6 +1386,57 @@ function checkFunds(){
   return activeFunds().filter(f=>(['monthly','reward','rest'].includes(f.kind)||f.kind==='goal'&&!f.isDebt||f.kind==='percent'&&!f.taxOnly))
     .map((f,i)=>({f,i,n:cnt[f.id]||0})).sort((a,b)=>b.n-a.n||(a.f.kind==='monthly'?0:1)-(b.f.kind==='monthly'?0:1)||a.i-b.i).map(x=>x.f);
 }
+/* ---------- частые траты одним касанием ----------
+   Одна и та же сумма в одном фонде в разные дни (кофе, проезд) пишется одним касанием с отменой.
+   Фонд, в котором за месяц две траты и больше, открывает окно траты с готовым фондом. Регулярный платёж фонда «платёж в месяц» сюда не попадает. */
+function quickSpends(max=6){
+  const since=isoD(new Date(Date.now()-90*864e5)), since30=isoD(new Date(Date.now()-30*864e5)), ok=new Map(activeFunds().filter(f=>f.kind!=='debt'&&!(f.kind==='percent'&&f.taxOnly)).map(f=>[f.id,f]));
+  const list=S.tx.filter(t=>t.type==='expense'&&(t.date||'')>=since&&ok.has(t.fundId)&&(t.from||t.fundId)===t.fundId&&t.note!==CHECK_NOTE&&!t.cover&&t.amount>0)
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||0)-(a.createdAt||0));
+  const pairs=new Map(), cnt=new Map();
+  for(const t of list){
+    const amt=Math.round(t.amount), k=t.fundId+'|'+amt, p=pairs.get(k)||{fundId:t.fundId,amount:amt,dates:new Set(),note:''};
+    p.dates.add(t.date); if(!p.note&&t.note) p.note=t.note.trim(); pairs.set(k,p);
+    if(t.date>=since30) cnt.set(t.fundId,(cnt.get(t.fundId)||0)+1);
+  }
+  const short=(x,n)=>x.length>n?x.slice(0,n-1)+'…':x;
+  const amts=[...pairs.values()].filter(p=>{const f=ok.get(p.fundId);return p.dates.size>=2&&!(f.kind==='monthly'&&+f.value>0&&p.amount>=f.value*.5)})
+    .sort((a,b)=>b.dates.size-a.dates.size).slice(0,4)
+    .map(p=>({type:'amt',fundId:p.fundId,amount:p.amount,note:p.note,label:short(p.note||ok.get(p.fundId).name,14)}));
+  const funds=[...cnt.entries()].filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]).map(([id])=>({type:'fund',fundId:id,label:short(ok.get(id).name,14)}));
+  return amts.concat(funds).slice(0,max);
+}
+// Фонд по прошлой записи с таким же комментарием: в окне траты подставляется сам
+function noteFund(note){
+  const k=(note||'').trim().toLowerCase(); if(k.length<2) return null;
+  let best=null;
+  for(const t of S.tx){
+    if(t.type!=='expense'||!t.note||t.note===CHECK_NOTE||t.note.trim().toLowerCase()!==k) continue;
+    if(!best||(t.date||'')>(best.date||'')||((t.date||'')===(best.date||'')&&(t.createdAt||0)>(best.createdAt||0))) best=t;
+  }
+  return best?{fundId:best.fundId,amount:best.amount}:null;
+}
+let quickBusy=false;
+async function quickSpend(fundId,amount,note){
+  const f=fundById(fundId); if(!f||!S.canWrite||quickBusy) return;
+  const amt=Math.round(+amount||0);
+  if(amt<=0) return openExpense(null,{fundId,quick:true});
+  // денег в фонде не хватает: окно траты предложит, откуда добрать
+  const {get}=stats(); if(f.kind!=='monthly'&&fstate(f,get).balance<amt-.5) return openExpense(null,{fundId,quick:true,amount:amt,note});
+  quickBusy=true; setTimeout(()=>quickBusy=false,700);
+  const L=accounts(), date=today();
+  const data={type:'expense',amount:amt,fundId,from:fundId,date,month:date.slice(0,7),note:note||'',acc:fundAcc(f)||(L[0]?L[0].id:''),cover:null,acc2:'',by:S.uid||null,createdAt:Date.now()};
+  try{
+    const id=await DB.add('tx',data);
+    toast(`Записано: ${f.name}, ${fmt(amt)}`,{label:'Отменить',fn:async()=>{try{await DB.del('tx',id);toast('Трата отменена')}catch(e){toast('Не получилось отменить.')}}});
+  }catch(e){toast('Не получилось сохранить. Проверьте интернет и попробуйте ещё раз.')}
+}
+function quickBlock(){
+  if(!S.canWrite||!accounts().length&&!S.tx.length) return '';
+  const q=quickSpends(); if(!q.length) return '';
+  return `<section class="quick" aria-label="Частые траты"><div class="q-head"><b>Частые траты</b><span class="note">касание записывает сразу</span></div><div class="q-row">${q.map(it=>{const f=fundById(it.fundId);
+    return `<button type="button" class="q-chip ${it.type}" data-act="quick-spend" data-fund="${esc(it.fundId)}" data-amt="${it.amount||''}" data-note="${esc(it.note||'')}"><span class="q-e">${esc(fundEmoji(f))}</span><span class="q-l">${esc(it.label)}</span>${it.amount?`<b>${fmt(it.amount)}</b>`:ic('plus','q-p')}</button>`}).join('')}</div></section>`;
+}
 function checkCard(){
   if(!S.canWrite) return '';
   if(!accounts().length) return `<section class="check-card"><div class="cc-main"><b>Сверка дня</b><span class="note">Добавьте карты и наличные с остатками. Тогда раз в день хватит сверить их с банком вместо записи каждой покупки.</span></div><button class="btn sm primary" data-act="go-res">Добавить карты</button></section>`;
@@ -1466,7 +1527,7 @@ function openCheckDone(r){
   const askRate=S.uid&&!LS.get('ff-fb-check:'+S.uid), askIcs=!LS.get('ff-check-ics');
   const parts=[r.spent?`траты ${fmt(r.spent)}`:'',r.inc?`доход ${fmt(r.inc)}`:'',r.found?`учтено ${fmt(r.found)}`:''].filter(Boolean);
   openSheet(`${sheetHead('Сверка дня')}
-  <div class="chk-done"><div class="chk-big">${ic('check')}</div><h3>Всё сходится</h3><p class="note">${parts.length?`Записано: ${parts.join(', ')}. `:'Записи совпали с банком. '}За неделю ${r.n} из 7.</p><div class="cc-dots">${checkDots(r.done)}</div></div>
+  <div class="chk-done"><div class="chk-big water" role="img" aria-label="Всё сходится"><div class="wv"><i></i><i></i></div>${ic('check')}</div><h3>Всё сходится</h3><p class="note">${parts.length?`Записано: ${parts.join(', ')}. `:'Записи совпали с банком. '}За неделю ${r.n} из 7.</p><div class="cc-dots">${checkDots(r.done)}</div></div>
   ${askRate?`<div class="field"><span class="lbl">Насколько удобной была сверка?</span>${rateRow('chkRate')}<div id="chkRateMore" hidden><textarea id="chkRateText" rows="3" placeholder="Что было непонятно или неудобно? Необязательно"></textarea><button type="button" class="btn ghost" id="chkRateSend">Отправить комментарий</button></div></div>`:''}
   ${askIcs?`<div class="field"><span class="lbl">Напоминать каждый вечер</span>${checkTimeField('chkT')}<span class="note">В календаре телефона появится ежедневное событие со звуком и ссылкой на Поток.</span></div>`:''}
   <button class="btn primary" data-act="close">Закрыть</button>`,()=>{
@@ -1790,6 +1851,7 @@ document.addEventListener('click',async e=>{
   if(act==='close')closeSheet();
   else if(act==='open-income'){if(S.canWrite)openIncome()}
   else if(act==='open-expense'){if(S.canWrite)openExpense()}
+  else if(act==='quick-spend')quickSpend(a.dataset.fund,a.dataset.amt,a.dataset.note);
   else if(act==='new-fund')openFund(null);
   else if(act==='new-debt')openFund(null,'debt');
   else if(act==='edit-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite){backHere(a);openFund(f)}}
