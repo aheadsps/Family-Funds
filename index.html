@@ -624,6 +624,21 @@ html.app-ready{background:var(--bg)}
 .q-chip.fund{border-style:dashed;box-shadow:none}
 .q-chip .q-p{width:14px;height:14px;color:var(--muted)}
 .q-chip:active{transform:scale(.97)}
+.wk-card,.rew{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:14px 16px}
+.wk-card .cc-main,.rew-t{flex:1;min-width:0;display:flex;gap:10px;align-items:center}
+.wk-card .cc-main{flex-direction:column;align-items:flex-start;gap:4px}
+.rew-t>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.rew-e{font-size:28px;line-height:1}
+.rew{border-color:var(--accent-soft);flex-wrap:wrap}
+.wk-act{display:flex;gap:6px;align-items:center;flex:none}
+.wk-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.wk-grid .kv .v{font-size:19px}
+.wk-top{display:flex;flex-direction:column;gap:8px}
+.wk-r{position:relative;display:flex;justify-content:space-between;gap:8px;padding:10px 12px;border-radius:var(--r-sm);background:var(--surface-2);overflow:hidden;font-size:14px}
+.wk-r>*{position:relative;z-index:1}
+.wk-r i{position:absolute;left:0;top:0;bottom:0;background:var(--accent-soft);z-index:0}
+.wk-q{padding:12px 14px;border-radius:var(--r-sm);background:var(--accent-soft)}
+.wk-q p{margin:4px 0 0;font-weight:600}
 .rate{display:flex;justify-content:space-between;gap:6px}
 .rate button{flex:1;height:48px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);font-size:24px;line-height:1}
 .rate button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}

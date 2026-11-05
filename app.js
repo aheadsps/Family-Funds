@@ -621,6 +621,8 @@ function renderNow(){
   if(S.canWrite) h+=`<div class="btn-row"><button class="btn primary" data-act="open-income">Пришли деньги</button><button class="btn ghost" data-act="open-expense">Потратили</button><button class="btn ghost wide" data-act="new-wish">Хочу купить…</button></div>`;
   h+=quickBlock();
   h+=checkCard();
+  h+=rewardCard();
+  h+=weekCard();
   h+=paymentsBlock();
   const RC=reconcile(); if(RC&&RC.moves.length){S.moves=RC.moves;h+=`<section class="block"><div class="sec-head"><h2>Переложите деньги</h2>${RC.moves.length>2?`<button class="btn sm ghost" data-tab-go="res">Все ${RC.moves.length}</button>`:''}</div><div class="list mvs">${RC.moves.slice(0,2).map(moveRow).join('')}</div></section>`}
   const T=tips(P); T.splice(Math.min(1,T.length),0,...wishTips());
@@ -1437,6 +1439,78 @@ function quickBlock(){
   return `<section class="quick" aria-label="Частые траты"><div class="q-head"><b>Частые траты</b><span class="note">касание записывает сразу</span></div><div class="q-row">${q.map(it=>{const f=fundById(it.fundId);
     return `<button type="button" class="q-chip ${it.type}" data-act="quick-spend" data-fund="${esc(it.fundId)}" data-amt="${it.amount||''}" data-note="${esc(it.note||'')}"><span class="q-e">${esc(fundEmoji(f))}</span><span class="q-l">${esc(it.label)}</span>${it.amount?`<b>${fmt(it.amount)}</b>`:ic('plus','q-p')}</button>`}).join('')}</div></section>`;
 }
+/* ---------- итоги недели и награда за неделю сверок (итерация 2) ----------
+   Неделя здесь это последние 7 дней, включая сегодня. Итоги читают те же записи, что и история, ничего нового не хранится. */
+const MON3=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+const dayLbl=iso=>{const [,m,d]=iso.split('-').map(Number);return d+' '+MON3[m-1]};
+function weekStats(){
+  const days=checkDays(14), cur=new Set(days.slice(7)), prev=new Set(days.slice(0,7));
+  const acc=set=>{
+    const r={inc:0,exp:0,debt:0,by:{}};
+    for(const t of S.tx){
+      if(!set.has(t.date)) continue; const a=+t.amount||0;
+      if(t.type==='income'){if(!t.found) r.inc+=a}
+      else if(t.type==='move'){if(t.debt) r.debt+=a}
+      else if(t.type==='expense'){const f=fundById(t.fundId); if(f&&f.kind==='debt') r.debt+=a; else{r.exp+=a;r.by[t.fundId]=(r.by[t.fundId]||0)+a}}
+    }
+    return r;
+  };
+  const c=acc(cur), p=acc(prev), done=checkedSet();
+  const top=Object.entries(c.by).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([id,sum])=>({id,sum,name:(fundById(id)||{}).name||'Фонд'}));
+  return {from:days[7],to:days[13],inc:c.inc,exp:c.exp,debt:c.debt,top,checks:days.slice(7).filter(d=>done.has(d)).length,prev:{inc:p.inc,exp:p.exp,debt:p.debt}};
+}
+function weekDiff(cur,prev){
+  if(!(prev>0)) return ''; const d=Math.round(cur-prev);
+  return Math.abs(d)<1?'как неделей раньше':`на ${fmt(Math.abs(d))} ${d>0?'больше':'меньше'}, чем неделей раньше`;
+}
+// Один вопрос для разговора семьи: самое заметное за неделю
+function weekQuestion(w){
+  if(w.prev.exp>0&&w.exp>w.prev.exp*1.25) return `Расходы выросли на ${Math.round((w.exp/w.prev.exp-1)*100)}% к прошлой неделе. Какие траты были лишними, а какие нужными?`;
+  if(w.debt>0) return `По долгам внесли ${fmt(w.debt)}. Что ещё можем отдать на следующей неделе?`;
+  if(w.checks<4) return `Сверок ${w.checks} из 7. Что мешает сверяться вечером и как это поправить?`;
+  return 'Что порадовало за неделю и что хотим изменить на следующей?';
+}
+function weekText(w){
+  const d=weekDiff(w.exp,w.prev.exp);
+  return [`Итоги недели, ${dayLbl(w.from)} — ${dayLbl(w.to)}`,`Пришло: ${fmt(w.inc)}`,`Потрачено: ${fmt(w.exp)}${d?` (${d})`:''}`,w.debt>0?`Внесено по долгам: ${fmt(w.debt)}`:'',
+    w.top.length?`Больше всего ушло: ${w.top.map(x=>`${x.name} ${fmt(x.sum)}`).join(', ')}`:'',`Сверок: ${w.checks} из 7`,'',`Вопрос для разговора: ${weekQuestion(w)}`].filter((x,i,a)=>x||(i>0&&a[i-1]!=='')).join('\n');
+}
+const weekKey=()=>checkDays(14)[13];
+const weekSeen=()=>!!LS.get('ff-week:'+(S.uid||'')+':'+weekKey());
+function weekCard(){
+  const dow=new Date().getDay(); if((dow!==0&&dow!==1)||weekSeen()) return '';
+  const w=weekStats(); if(!(w.inc||w.exp||w.debt||w.checks)) return '';
+  return `<section class="card wk-card"><div class="cc-main"><b>Итоги недели готовы</b><span class="note">${esc(dayLbl(w.from))} — ${esc(dayLbl(w.to))}: потрачено ${fmt(w.exp)}. Удобно обсудить вдвоём.</span></div><div class="wk-act"><button class="btn sm primary" data-act="week-open">Открыть</button><button class="btn sm ghost" data-act="week-later" aria-label="Скрыть">${ic('x')}</button></div></section>`;
+}
+function openWeek(){
+  const w=weekStats(); LS.set('ff-week:'+(S.uid||'')+':'+weekKey(),'1');
+  const d=weekDiff(w.exp,w.prev.exp), mx=Math.max(1,...w.top.map(x=>x.sum));
+  openSheet(`${sheetHead('Итоги недели')}
+  <p class="note">${esc(dayLbl(w.from))} — ${esc(dayLbl(w.to))}</p>
+  <div class="wk-grid"><div class="kv"><div class="k">Пришло</div><div class="v">${fmt(w.inc)}</div></div><div class="kv"><div class="k">Потрачено</div><div class="v">${fmt(w.exp)}</div>${d?`<div class="note">${esc(d)}</div>`:''}</div><div class="kv"><div class="k">Внесено по долгам</div><div class="v">${fmt(w.debt)}</div></div><div class="kv"><div class="k">Сверок</div><div class="v">${w.checks} из 7</div></div></div>
+  ${w.top.length?`<div class="field"><span class="lbl">Больше всего ушло</span><div class="wk-top">${w.top.map(x=>`<div class="wk-r"><span>${esc(fundEmoji(fundById(x.id)))} ${esc(x.name)}</span><b>${fmt(x.sum)}</b><i style="width:${Math.max(6,Math.round(x.sum/mx*100))}%"></i></div>`).join('')}</div></div>`:''}
+  <div class="wk-q"><span class="lbl">Вопрос для семейного совета</span><p>${esc(weekQuestion(w))}</p></div>
+  <button class="btn primary" id="wkShare">${ic('send')}Поделиться итогами</button>`,()=>{
+    $('#wkShare').addEventListener('click',async()=>{
+      const text=weekText(w);
+      if(navigator.share){try{await navigator.share({title:'Поток: итоги недели',text});return}catch(e){if(e&&e.name==='AbortError')return}}
+      copyText(text,'Итоги скопированы, отправьте их в мессенджере');
+    });
+  });
+  render();
+}
+// Награда: сверка в 5 днях из 7, за каждую календарную неделю один раз
+function rewardWeek(){const n=new Date(),k=(n.getDay()+6)%7;return isoD(new Date(n.getFullYear(),n.getMonth(),n.getDate()-k))}
+function rewardDue(){
+  if(!S.uid||LS.get('ff-rew:'+S.uid+':'+rewardWeek())) return null;
+  const done=checkedSet(), n=checkDays(7).filter(d=>done.has(d)).length;
+  return n>=5?n:null;
+}
+function rewardCard(){
+  const n=rewardDue(); if(!n) return '';
+  const rf=activeFunds().find(f=>f.kind==='reward'), bal=rf?Math.max(0,Math.round(fstate(rf,stats().get).balance)):0, can=bal>0&&S.canWrite;
+  return `<section class="card rew"><div class="rew-t"><span class="rew-e">🏆</span><div><b>Неделя сверок: ${n} из 7</b><span class="note">${bal>0?`В фонде наград ${fmt(bal)}. Выберите, что себе позволить.`:'Награды копятся с каждого дохода. Бюджет в порядке, это стоит отметить.'}</span></div></div><div class="wk-act">${can?'<button class="btn sm primary" data-act="rew-pick">Выбрать награду</button>':''}<button class="btn sm ghost" data-act="rew-close">${can?'Позже':'Спасибо'}</button></div></section>`;
+}
 function checkCard(){
   if(!S.canWrite) return '';
   if(!accounts().length) return `<section class="check-card"><div class="cc-main"><b>Сверка дня</b><span class="note">Добавьте карты и наличные с остатками. Тогда раз в день хватит сверить их с банком вместо записи каждой покупки.</span></div><button class="btn sm primary" data-act="go-res">Добавить карты</button></section>`;
@@ -1852,6 +1926,10 @@ document.addEventListener('click',async e=>{
   else if(act==='open-income'){if(S.canWrite)openIncome()}
   else if(act==='open-expense'){if(S.canWrite)openExpense()}
   else if(act==='quick-spend')quickSpend(a.dataset.fund,a.dataset.amt,a.dataset.note);
+  else if(act==='week-open')openWeek();
+  else if(act==='week-later'){LS.set('ff-week:'+(S.uid||'')+':'+weekKey(),'1');render()}
+  else if(act==='rew-pick'){LS.set('ff-rew:'+S.uid+':'+rewardWeek(),'1');render();if(S.canWrite)openWish(null)}
+  else if(act==='rew-close'){LS.set('ff-rew:'+S.uid+':'+rewardWeek(),'1');render()}
   else if(act==='new-fund')openFund(null);
   else if(act==='new-debt')openFund(null,'debt');
   else if(act==='edit-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite){backHere(a);openFund(f)}}
@@ -2678,6 +2756,7 @@ function openSettings(){
   <div class="field"><span class="lbl">Напоминания</span><button class="btn ghost" data-act="ics">${ic('calendar-plus')}Платежи в календарь телефона</button><span class="note">Каждый платёж с указанным днём станет ежемесячным событием с напоминанием накануне. Если поменяете дни или суммы, добавьте файл заново.</span></div>
   <div class="field"><span class="lbl">Данные</span><div class="btn-row"><button class="btn ghost" data-act="export-csv">${ic('file-spreadsheet')}Записи в CSV</button><button class="btn ghost" data-act="export-json">${ic('file-braces')}Копия JSON</button></div><span class="note">CSV открывается в Excel и Google Таблицах. JSON — полная копия бюджета на случай сбоя или переезда.</span></div>
   <div class="field"><span class="lbl">Сверка дня</span>${checkTimeField('sChkT')}<span class="note">Ежедневное событие в календаре телефона с напоминанием сверить остатки.</span></div>
+  <button class="btn ghost" data-act="week-open">${ic('calendar-clock')}Итоги недели</button>
   <button class="btn primary" data-act="feedback">${ic('message-square')}Отзыв о Потоке</button>
   <button class="btn ghost" data-act="tour">${ic('lightbulb')}Показать подсказки</button>
   <div class="field"><span class="lbl">Документы</span><div class="doc-links"><a href="terms.html" target="_blank" rel="noopener">Пользовательское соглашение</a><a href="privacy.html" target="_blank" rel="noopener">Политика обработки данных</a><a href="consent.html" target="_blank" rel="noopener">Согласие на обработку данных</a></div></div>
