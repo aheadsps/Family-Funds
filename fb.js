@@ -29,12 +29,16 @@ export function onAuth(cb) {
   return A.onAuthStateChanged(auth, u => cb(u ? { uid: u.uid, email: u.email, name: u.displayName || '' } : null));
 }
 export function signIn(email, pw) { return A.signInWithEmailAndPassword(auth, email, pw); }
-// consent: версия памятки о данных, с которой человек согласился при регистрации
+// consent: версия документов (соглашение, политика, согласие), которые человек принял при регистрации
 export async function signUp(email, pw, name, consent) {
   const cred = await A.createUserWithEmailAndPassword(auth, email, pw);
   if (name) { try { await A.updateProfile(cred.user, { displayName: name }); } catch (e) {} }
-  if (consent) { try { await F.setDoc(d('users', cred.user.uid), { consentAt: Date.now(), consentVer: consent }, { merge: true }); } catch (e) {} }
+  if (consent) { try { await setConsent(cred.user.uid, consent); } catch (e) {} }
   return cred;
+}
+// Принятие документов: пользовательское соглашение и согласие на обработку данных, с датой и версией
+export function setConsent(uid, ver) {
+  return F.setDoc(d('users', uid), { consentAt: Date.now(), consentVer: ver, termsAt: Date.now(), termsVer: ver }, { merge: true });
 }
 export function resetPassword(email) { return A.sendPasswordResetEmail(auth, email); }
 export function signOut() { hid = null; return A.signOut(auth); }

@@ -554,11 +554,11 @@ function lastIncomeKv(){const m=shiftMonth(curMonth(),-1); if(!S.tx.some(t=>t.mo
   const v=sum(S.tx.filter(t=>t.type==='income'&&!t.found&&t.month===m).map(t=>+t.amount||0));
   return `<div class="kv"><div class="k">Доход в ${PREP[+m.slice(5)-1]}</div><div class="v muted">${fmt(v)}</div></div>`}
 function renderNow(){
-  if(!activeFunds().length) return emptyFunds();
+  if(!activeFunds().length) return consentCard()+emptyFunds();
   const P=monthPicture(); const mi=P.mi; const core=P.coreNet>0.5, plans=P.planNet>0.5;
   const C=plans?planCheck(P):null;
   const planLine=!plans?'':C&&C.known&&!C.ok?` На планы по срокам и целям нужно ещё <b>${fmt(P.planGross)}</b>, <span class="neg">при вашем доходе сроки не сходятся</span>.`:` Ещё <b>${fmt(P.planGross)}</b> на планы: сроки по долгам и целям.`;
-  let h=`<section class="hero"><div class="hero-main">${P.coreProgress!==null?ringSvg(core?P.coreProgress:1,!core):''}<div>`;
+  let h=consentCard()+`<section class="hero"><div class="hero-main">${P.coreProgress!==null?ringSvg(core?P.coreProgress:1,!core):''}<div>`;
   if(core){
     h+=`<div class="eyebrow">Ещё нужно заработать в ${PREP[mi]}</div><div class="fig" data-count="${Math.round(P.coreGross)}">${fmt(P.coreGross)}</div>
     <div class="note">На жизнь и минимальные платежи по долгам${P.pct?`, с учётом ${nf.format(P.pct)}% в процентные фонды`:''}.${planLine} <button class="link" data-act="need-why">Из чего складывается</button></div>`;
@@ -1769,6 +1769,8 @@ document.addEventListener('click',async e=>{
   else if(act==='open-check'){if(S.canWrite)openCheck()}
   else if(act==='check-ics'){const el=$('#'+(a.dataset.time||''));exportCheckICS(el?el.value:'')}
   else if(act==='feedback'){openFeedback()}
+  else if(act==='accept-docs'){const e=$('#cErr');if(!$('#cTerms').checked||!$('#cOk').checked){e.textContent='Отметьте обе галочки.';return}
+    a.disabled=true;try{await DB.setConsent(S.uid,CONSENT_VER);S.needConsent=false;render();toast('Спасибо, документы приняты')}catch(err){a.disabled=false;e.textContent='Не получилось сохранить. Проверьте интернет и попробуйте ещё раз.'}}
   else if(act==='pmf'){const ans=a.dataset.a;LS.set('ff-pmf:'+S.uid,'1');sendFeedback({kind:'pmf',answer:ans});render();openPmfNote(ans)}
   else if(act==='pmf-later'){LS.set('ff-pmf-later:'+S.uid,String(Date.now()+3*864e5));render()}
   else if(act==='pause-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite)setPause(f,true)}
@@ -2480,7 +2482,7 @@ function renderGate(main){
       ${reg?`<div class="field"><label for="aName">Как вас зовут</label><input id="aName" autocomplete="given-name" placeholder="Макс"></div>`:''}
       <div class="field"><label for="aEmail">Почта</label><input id="aEmail" type="email" autocomplete="email" inputmode="email" autocapitalize="off"></div>
       <div class="field"><label for="aPw">Пароль</label><input id="aPw" type="password" autocomplete="${reg?'new-password':'current-password'}" ${reg?'placeholder="Не меньше 6 символов"':''}></div>
-      ${reg?`<label class="check consent"><input type="checkbox" id="aOk"><span>Согласен на обработку моих данных по <a href="privacy.html" target="_blank" rel="noopener">памятке о данных</a></span></label>`:''}
+      ${reg?docChecks('a'):''}
       <div class="err" id="gErr"></div><p class="note" id="gNote"></p>
       <button class="btn primary" type="submit" id="aGo">${reg?'Создать аккаунт':'Войти'}</button>
     </form>
@@ -2515,13 +2517,23 @@ document.addEventListener('submit',e=>{
   const reg=S.authMode==='register'; const email=$('#aEmail').value.trim(), pw=$('#aPw').value;
   if(!email){$('#gErr').textContent='Введите почту.';return}
   gateBusy($('#aGo'),async()=>{
-    if(reg){const name=$('#aName').value.trim(); if(!name){throw {code:'_name'}} if(!$('#aOk').checked){throw {code:'_consent'}} S.pendingName=name; await DB.signUp(email,pw,name,CONSENT_VER)}
+    if(reg){const name=$('#aName').value.trim(); if(!name){throw {code:'_name'}} if(!$('#aTerms').checked){throw {code:'_terms'}} if(!$('#aOk').checked){throw {code:'_consent'}} S.pendingName=name; await DB.signUp(email,pw,name,CONSENT_VER)}
     else await DB.signIn(email,pw);
   });
 });
 AUTH_ERR._name='Напишите, как вас зовут: имя видно в истории записей.';
 AUTH_ERR._consent='Отметьте согласие на обработку данных: без него мы не можем хранить ваш бюджет.';
-const CONSENT_VER='2026-11-focus';   // версия памятки о данных (privacy.html), с которой соглашаются при регистрации
+AUTH_ERR._terms='Примите пользовательское соглашение, чтобы зарегистрироваться.';
+// Версия документов: terms.html, privacy.html, consent.html. Поднимите её, когда документы изменятся: все примут их заново
+const CONSENT_VER='2026-11-16';
+// Две отдельные галочки: согласие на обработку данных по закону оформляется отдельно от соглашения
+function docChecks(p){return `<label class="check consent"><input type="checkbox" id="${p}Terms"><span>Принимаю <a href="terms.html" target="_blank" rel="noopener">пользовательское соглашение</a> и <a href="privacy.html" target="_blank" rel="noopener">политику обработки данных</a></span></label>
+  <label class="check consent"><input type="checkbox" id="${p}Ok"><span>Даю <a href="consent.html" target="_blank" rel="noopener">согласие на обработку персональных данных</a></span></label>`}
+// Кто зарегистрировался раньше или до новой версии документов: карточка на главной, пока не примет
+function consentCard(){
+  if(!S.needConsent) return '';
+  return `<section class="card consent-card"><b>Документы Потока</b><span class="note">Мы подготовили пользовательское соглашение, политику обработки данных и согласие на обработку. Примите их, чтобы и дальше пользоваться Потоком.</span>${docChecks('c')}<div class="err" id="cErr"></div><button class="btn primary" data-act="accept-docs">Принять</button></section>`;
+}
 
 async function onGateAction(act,a){
   if(act==='auth-mode'){S.authMode=S.authMode==='register'?'login':'register';render();return true}
@@ -2555,7 +2567,7 @@ function openSettings(){
   <div class="field"><span class="lbl">Сверка дня</span>${checkTimeField('sChkT')}<span class="note">Ежедневное событие в календаре телефона с напоминанием сверить остатки.</span></div>
   <button class="btn primary" data-act="feedback">${ic('message-square')}Отзыв о Потоке</button>
   <button class="btn ghost" data-act="tour">${ic('lightbulb')}Показать подсказки</button>
-  <a class="btn ghost" href="privacy.html" target="_blank" rel="noopener">Памятка о данных</a>
+  <div class="field"><span class="lbl">Документы</span><div class="doc-links"><a href="terms.html" target="_blank" rel="noopener">Пользовательское соглашение</a><a href="privacy.html" target="_blank" rel="noopener">Политика обработки данных</a><a href="consent.html" target="_blank" rel="noopener">Согласие на обработку данных</a></div></div>
   <button class="btn ghost" data-act="refresh-app">${ic('refresh-cw')}Обновить приложение</button>
   <button class="btn ghost" data-act="wz-restart">Пройти настройку заново</button>
   <div class="err" id="sErr"></div>
@@ -2626,6 +2638,7 @@ render();
     if(known) startHousehold(known);
     let prof=null; try{prof=await DB.getProfile(u.uid)}catch(e){if(known)return}
     if(prof&&prof.name&&!S.myName)S.myName=prof.name;
+    S.needConsent=!!prof&&prof.consentVer!==CONSENT_VER; if(S.needConsent&&S.status==='ready')renderSoon();
     if(!prof||!prof.hid){LS.del(hk);if(known)stopWatching();S.status='onboard';render();return}
     LS.set(hk,prof.hid);
     if(prof.hid!==known) startHousehold(prof.hid);
