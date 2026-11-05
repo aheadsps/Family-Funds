@@ -58,7 +58,9 @@ function fundName(id){if(id==='_free')return 'Без фонда';const f=S.funds
 // Процент с дохода: фонд «% с дохода», а также цель или долг, у которых правило «процент» (поле pct)
 // Пауза на месяц (pausedM = 'ГГГГ-ММ'): в этом месяце фонд не берёт деньги из доходов и не просит платёж, со следующего всё как раньше.
 // Только расходы и накопления: долги (банк ждёт платёж), налог, награды и «остаток» на паузу не ставятся
-const canPause=f=>!!f&&(f.kind==='monthly'||f.kind==='goal'&&!f.isDebt||f.kind==='percent'&&!f.taxOnly);
+// Похоже на платёж банку по кредиту (по названию): такой платёж нельзя поставить на паузу или «сократить»
+const LOANISH=/кредит|ипотек|рассрочк|займ|заём|лизинг|машин|авто(?!бус)|долг/i;
+const canPause=f=>!!f&&(f.kind==='monthly'&&!LOANISH.test(f.name||'')||f.kind==='goal'&&!f.isDebt||f.kind==='percent'&&!f.taxOnly);
 function paused(f){return canPause(f)&&!!f.pausedM&&f.pausedM===curMonth()}
 const pctRate=f=>paused(f)?0:f.kind==='percent'?(+f.value||0):((f.kind==='goal'||f.kind==='debt')&&+f.pct>0?+f.pct:0);
 const G0=()=>({alloc:0,allocM:0,spent:0,spentM:0,thru:0});
@@ -327,6 +329,9 @@ function tips(P){
   const monthlyNoDay=funds.filter(f=>f.kind==='monthly'&&!(+f.payDay));
   if(monthlyNoDay.length&&monthlyNoDay.length===funds.filter(f=>f.kind==='monthly').length) out.push({tone:'info',title:'Укажите дни платежей',text:'Откройте ежемесячный фонд и впишите день оплаты. На главной появятся ближайшие платежи, а напоминания можно добавить в календарь телефона.',act:{label:'Открыть фонды',act:'go-funds'}});
   const cut=cutTip(P); if(cut) out.push(cut);
+  const loan=funds.find(f=>f.kind==='monthly'&&!f.notLoan&&/кредит|рассрочк|займ|заём|лизинг/i.test(f.name||'')||f.kind==='monthly'&&!f.notLoan&&/машин|авто(?!бус)/i.test(f.name||'')&&(+f.value||0)>=10000);
+  if(loan&&S.canWrite) out.push({tone:'warn',title:`«${loan.name}» похож на кредит`,text:'Сейчас это обычный ежемесячный расход, и приложение не знает остаток и ставку. Включите в фонде «Это долг» и впишите остаток, ставку и платёж: тогда фонд не попадёт в «можно сократить», а приложение посчитает, какой долг выгоднее гасить первым.',act:{label:'Открыть фонд',act:'edit-fund',id:loan.id},act2:{label:'Это не кредит',act:'not-loan',id:loan.id}});
+  const adv=debtTip(); if(adv) out.push(adv);
   return out;
 }
 /* Что можно временно сократить, чтобы быстрее закрыть долги: самый крупный «платёж в месяц», который не похож
@@ -335,7 +340,7 @@ const ESSENTIAL=/квартир|аренд|ипотек|коммун|жкх|св
 function cutTip(P){
   const {get,funds,mi}=P; if(!S.canWrite) return null;
   const debt=funds.find(f=>f.kind==='debt'&&fstate(f,get).remaining>0.5); if(!debt) return null;
-  const c=funds.filter(f=>f.kind==='monthly'&&!paused(f)&&!f.noCut&&(+f.value||0)>0&&!ESSENTIAL.test(f.name||'')&&fstate(f,get).spentM<0.5)
+  const c=funds.filter(f=>f.kind==='monthly'&&!paused(f)&&!f.noCut&&(+f.value||0)>0&&!ESSENTIAL.test(f.name||'')&&!LOANISH.test(f.name||'')&&fstate(f,get).spentM<0.5)
     .sort((a,b)=>(+b.value||0)-(+a.value||0))[0];
   if(!c) return null;
   // куда пойдут деньги: первый в очереди долгов и целей, кто ещё берёт деньги сверх обязательного
@@ -344,6 +349,48 @@ function cutTip(P){
   return {tone:'info',title:`Можно сократить «${c.name}»`,
     text:`Пауза в ${PREP[mi]} отдаст ${fmt(v)} в «${q.name}»`+(days?`: ${isD?'долг закроется':'цель накопится'} примерно на ${daysWord(days)} раньше.`:'.')+' Со следующего месяца фонд снова получает деньги.',
     act:{label:`Пауза на ${NOM[mi].toLowerCase()}`,act:'pause-fund',id:c.id},act2:{label:'Не предлагать',act:'nocut-fund',id:c.id}};
+}
+/* Куда отдавать лишние деньги в первую очередь и почему.
+   Деньги сверх минимальных платежей выгоднее всего гасить в долг с самой высокой ставкой: каждый рубль там «съедает»
+   больше процентов. Когда он закрыт, его платёж и лишние деньги идут в следующий (каскад). Срок кредита на очередь не влияет:
+   по длинному кредиту с низкой ставкой рубль досрочно экономит меньше. «Снежный ком» показываем как альтернативу, если он
+   закрывает первый долг заметно быстрее, а переплата растёт немного. */
+function debtAdvice(list,budget){
+  const open=(list||debtList()).filter(d=>d.bal>0.5); if(open.length<2) return null;
+  const noRate=open.filter(d=>!(d.rate>0)&&!d.f.rateSet);
+  const av=orderDebts(open,'avalanche'), target=av.at(0), next=av.at(1);
+  const per=av.map(d=>({d,save:Math.round(10000*d.rate/100)}));
+  const A=budget>0?simulate('avalanche',budget,open):{noBudget:true};
+  const ok=!A.noBudget&&!A.stuck;
+  let snow=null;
+  const sb=orderDebts(open,'snowball').at(0);
+  if(ok&&sb.f.id!==target.f.id){const B=simulate('snowball',budget,open);
+    if(!B.stuck&&B.at[sb.f.id]&&A.at[target.f.id]) snow={d:sb,months:B.at[sb.f.id],extra:Math.max(0,Math.round(B.interest-A.interest))}}
+  const cur=stratOf(); let curExtra=0;
+  if(ok&&cur!=='avalanche'){const C=simulate(cur,budget,open);if(!C.stuck)curExtra=Math.max(0,Math.round(C.interest-A.interest))}
+  return {target,next,per,closeIn:ok?A.at[target.f.id]:null,months:ok?A.months:null,interest:ok?Math.round(A.interest):null,snow,cur,curExtra,noRate,ok};
+}
+function debtTip(){
+  const B=debtBudget(), a=debtAdvice(null,B.v); if(!a||a.noRate.length) return null;
+  const t=a.target, n=a.next, gap=(t.rate-n.rate)>=0.5;
+  return {tone:'info',title:`Лишние деньги на долги — в «${t.f.name}»`,
+    text:(gap?`У этого долга самая высокая ставка, ${nf2.format(t.rate)}%: каждые 10 000 ₽ досрочно экономят около ${fmt(a.per.at(0).save)} процентов в год, в «${n.f.name}» — около ${fmt(a.per.at(1).save)}.`:`Ставки почти равны, поэтому первым идёт меньший остаток.`)+(a.closeIn?` Он закроется ${monthIn(a.closeIn)}, потом освободившийся платёж пойдёт в «${n.f.name}».`:''),
+    act:{label:'Почему так',act:'go-debts'}};
+}
+function adviceCard(){
+  const B=debtBudget(), a=debtAdvice(null,B.v); if(!a) return '';
+  if(a.noRate.length) return `<section class="card advice"><h3>Куда отдавать лишние деньги</h3><p class="note">Чтобы посчитать, какой долг гасить первым, впишите ставку у ${a.noRate.map(d=>'«'+esc(d.f.name)+'»').join(', ')}. Нажмите на долг ниже.</p></section>`;
+  const t=a.target, n=a.next, others=a.per.slice(1);
+  const queue=orderDebts(debtList().filter(d=>d.bal>0.5),'avalanche').map(d=>d.f.id).join(), inQueue=activeFunds().filter(f=>f.kind==='debt'&&debtList().find(d=>d.f.id===f.id&&d.bal>0.5)).map(f=>f.id).join();
+  const needApply=S.canWrite&&(a.cur!=='avalanche'||queue!==inQueue);
+  return `<section class="card advice"><h3>Куда отдавать лишние деньги</h3>
+  <p class="adv-main">Сначала <b>«${esc(t.f.name)}»</b>${a.closeIn?`: при нынешнем бюджете закроется ${esc(monthIn(a.closeIn))}`:''}.</p>
+  <div class="list chg">${a.per.map((x,i)=>`<div class="chg-row" style="grid-template-columns:minmax(0,1fr) auto"><span>${i===0?'<b>':''}${esc(x.d.f.name)}${i===0?'</b>':''} <span class="note">${nf2.format(x.d.rate)}% · остаток ${fmt(x.d.bal)}</span></span><b>${fmt(x.save)}</b></div>`).join('')}</div>
+  <p class="note">Сколько процентов в год экономят 10 000 ₽, внесённые досрочно. Чем выше ставка, тем больше выгода от каждого лишнего рубля, поэтому срок кредита на очередь не влияет.</p>
+  <p class="note">${a.closeIn?`Когда «${esc(t.f.name)}» закроется, освободившийся платёж и лишние деньги пойдут в «${esc(n.f.name)}»: так большие платежи по длинному кредиту начнутся раньше. `:''}При досрочном погашении кредита с ежемесячным платежом просите банк сокращать срок: переплата будет меньше. Уменьшение платежа выбирайте, если важнее снизить обязательные траты.</p>
+  ${a.snow?`<p class="note">Если важнее быстрее закрыть хотя бы один долг, можно начать с «${esc(a.snow.d.f.name)}»: он закроется ${esc(monthIn(a.snow.months))}, переплата вырастет ${a.snow.extra>=100?`примерно на ${fmt(a.snow.extra)}`:'совсем немного'}.</p>`:''}
+  ${a.curExtra>=100?`<p class="note">С вашей текущей очередью переплата больше примерно на ${fmt(a.curExtra)}.</p>`:''}
+  ${needApply?`<button class="btn primary" data-act="advice-apply">Гасить в этом порядке</button>`:''}</section>`;
 }
 /* ---------- «Хочу купить»: варианты по формуле ---------- */
 const BONUS_PCT = 5;          // награда за закрытый долг: % от суммы долга
@@ -669,6 +716,7 @@ function debtPlan(){
   else if(r.stuck) h+=`<div class="fig ok">Не гасится</div><div class="note">При ${fmt(B.v)} в месяц проценты больше платежей. Увеличьте сумму на долги.</div>`;
   else h+=`<div class="fig">через ${esc(durationWord(r.months))}</div><div class="note">${esc(cap(monthIn(r.months)))}${r.interest>=1?` · переплата по процентам ≈ ${fmt(r.interest)}`:''}</div>`;
   h+=`<div class="hero-split"><div class="kv"><div class="k">Осталось погасить</div><div class="v">${fmt(total)}</div></div><div class="kv"><div class="k">На долги в месяц</div><div class="v">${fmt(B.v)}</div></div></div></section>`;
+  h+=adviceCard();
   if(r.short) h+=`<div class="tip bad"><span class="dot"></span><div><b>Не хватает на минимальные платежи</b><span class="muted small">Минимальные платежи по долгам ${fmt(r.mins)} в месяц, а на долги остаётся ${fmt(B.v)}.</span></div></div>`;
   // бюджет
   h+=`<section class="card"><div class="sec-head"><h3>Сколько в месяц идёт на долги</h3>${S.canWrite&&!S.debtEdit?'<button class="btn sm ghost" data-act="debt-budget-edit">Изменить</button>':''}</div>`;
@@ -1774,6 +1822,9 @@ document.addEventListener('click',async e=>{
   else if(act==='pmf'){const ans=a.dataset.a;LS.set('ff-pmf:'+S.uid,'1');sendFeedback({kind:'pmf',answer:ans});render();openPmfNote(ans)}
   else if(act==='pmf-later'){LS.set('ff-pmf-later:'+S.uid,String(Date.now()+3*864e5));render()}
   else if(act==='pause-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite)setPause(f,true)}
+  else if(act==='go-debts'){S.tab='debts';S.enterNext=true;render();window.scrollTo(0,0)}
+  else if(act==='not-loan'){const f=fundById(a.dataset.id);if(f&&S.canWrite)write(async()=>{await DB.update('funds',f.id,{notLoan:true});f.notLoan=true},`Понял, «${f.name}» — обычный расход`)}
+  else if(act==='advice-apply'){if(S.canWrite){if(S.household)S.household.debtStrategy='avalanche';DB.setHousehold({debtStrategy:'avalanche'});await applyStrategy('avalanche');render()}}
   else if(act==='nocut-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite)write(async()=>{await DB.update('funds',f.id,{noCut:true});f.noCut=true},`Больше не предлагаю сокращать «${f.name}»`)}
   else if(act==='paid-mark'){const f=fundById(a.dataset.id);if(f&&S.canWrite){const date=today();
     const id=await DB.add('tx',{type:'paidmark',fundId:f.id,amount:+a.dataset.amt||0,date,month:curMonth(),note:'',by:S.uid||null,createdAt:Date.now()});
