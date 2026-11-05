@@ -597,6 +597,33 @@ html.app-ready{background:var(--bg)}
 .chk-done h3{margin:0;font-size:20px}
 .chk-big{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)}
 .chk-big .ic{width:28px;height:28px}
+.chk-big.water{width:96px;height:96px;position:relative;overflow:hidden;box-shadow:inset 0 0 0 2px var(--accent-soft),0 6px 18px var(--accent-soft)}
+.chk-big.water .ic{width:38px;height:38px;position:relative;z-index:1;color:var(--accent-ink)}
+.chk-big .wv{position:absolute;inset:0;transform:translateY(24%)}
+.chk-big .wv i{position:absolute;left:-50%;top:-4px;width:200%;height:200%;border-radius:42%;background:var(--accent);opacity:.6}
+.chk-big .wv i+i{border-radius:38%;opacity:.45;top:2px}
+@media (prefers-reduced-motion:no-preference){
+  .chk-big .wv{transform:translateY(100%);animation:wvFill 1.6s cubic-bezier(.22,.8,.3,1) .1s forwards}
+  .chk-big .wv i{animation:wvSpin 6s linear infinite}
+  .chk-big .wv i+i{animation-duration:9s;animation-direction:reverse}
+  .chk-big.water .ic{opacity:0;transform:scale(.6);animation:wvIc .5s cubic-bezier(.3,1.4,.5,1) 1.15s forwards}
+  .chk-done h3,.chk-done .note,.chk-done .cc-dots{animation:wvIn .5s ease 1.3s backwards}
+}
+@keyframes wvFill{to{transform:translateY(24%)}}
+@keyframes wvSpin{to{transform:rotate(360deg)}}
+@keyframes wvIc{to{opacity:1;transform:none}}
+@keyframes wvIn{from{opacity:0;transform:translateY(6px)}}
+.quick{display:flex;flex-direction:column;gap:8px}
+.q-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.q-head b{font-size:14px}
+.q-head .note{font-size:12px}
+.q-row{display:flex;flex-wrap:wrap;gap:8px}
+.q-chip{display:inline-flex;align-items:center;gap:6px;min-height:44px;max-width:100%;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer;box-shadow:var(--card-shadow)}
+.q-chip .q-l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.q-chip b{font-weight:700;color:var(--accent);white-space:nowrap}
+.q-chip.fund{border-style:dashed;box-shadow:none}
+.q-chip .q-p{width:14px;height:14px;color:var(--muted)}
+.q-chip:active{transform:scale(.97)}
 .rate{display:flex;justify-content:space-between;gap:6px}
 .rate button{flex:1;height:48px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);font-size:24px;line-height:1}
 .rate button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
