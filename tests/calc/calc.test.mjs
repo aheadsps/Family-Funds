@@ -14,8 +14,8 @@ const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
 const pend = block(/^function accounts\(\)/, /^function moveTitle/);
 const order = block(/^const FTIERS=/, /^function renderFunds/) + '\n' + block(/^function reorderGroup/, /^async function moveFund/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {orderState,weekStats,weekDiff,weekQuestion,weekText,rewardDue,quickSpends,noteFund,debtList,debtAdvice,debtTip,canPause,checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
-const { orderState, weekStats, weekDiff, weekQuestion, weekText, rewardDue, quickSpends, noteFund, debtList, debtAdvice, debtTip, canPause, checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {evenSplit,manualAlloc,shiftSources,orderState,weekStats,weekDiff,weekQuestion,weekText,rewardDue,quickSpends,noteFund,debtList,debtAdvice,debtTip,canPause,checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
+const { evenSplit, manualAlloc, shiftSources, orderState, weekStats, weekDiff, weekQuestion, weekText, rewardDue, quickSpends, noteFund, debtList, debtAdvice, debtTip, canPause, checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -707,4 +707,37 @@ test('порядок: сверка три дня назад, сегодня и �
   assert.deepEqual([orderState().gap, orderState().need], [3, true]);
   S.tx.push({ id: 'c2', type: 'check', date: dAgo(1), month: m, accs: {} });
   assert.deepEqual([orderState().gap, orderState().need], [1, false], 'вчера сверялись: всё в порядке');
+});
+
+/* ---------- ручное распределение и перевод между фондами ---------- */
+test('поровну: целые рубли, сумма сходится', () => {
+  assert.deepEqual(evenSplit(10000, 3), [3334, 3333, 3333]);
+  assert.deepEqual(evenSplit(9000, 2), [4500, 4500]);
+  assert.deepEqual(evenSplit(500, 0), []);
+});
+
+test('«Распределю сам»: налог берётся сам, весь остаток в долг, нераспределённое без фонда', () => {
+  const card = { id: 'cc', name: 'Кредитка', kind: 'debt', value: 200000, minPay: 5000, rate: 30 };
+  setup([tax, food, card, rest]);
+  const a = manualAlloc(100000, { tax: 6000 }, [{ id: 'cc', amt: 94000 }]);
+  assert.deepEqual(a, { alloc: { tax: 6000, cc: 94000 }, left: 0 });
+  const b = manualAlloc(50000, {}, [{ id: 'cc', amt: 30000 }, { id: 'food', amt: 15000 }, { id: 'rest', amt: 0 }]);
+  assert.deepEqual(b, { alloc: { cc: 30000, food: 15000, _free: 5000 }, left: 5000 });
+  // записанный доход: долг получил всё, еда ничего
+  S.tx = [{ id: 'i', type: 'income', amount: 100000, date: day, month: m, alloc: a.alloc }];
+  const { get } = stats();
+  assert.equal(Math.round(fstate(card, get).remaining), 106000, 'весь доход после налога ушёл на долг');
+  assert.equal(Math.round(fstate(food, get).balance), 0);
+});
+
+test('перевод из еды в коммуналку: деньги переходят, трата не появляется, коммуналке нужно меньше', () => {
+  const util = { id: 'util', name: 'Коммуналка', kind: 'monthly', value: 8000 };
+  setup([food, util, rest], [{ id: 'i', type: 'income', amount: 13000, date: day, month: m, alloc: { food: 10000, util: 3000 } }]);
+  assert.deepEqual(shiftSources().map(x => [x.id, x.bal]), [['food', 10000], ['util', 3000]]);
+  S.tx.push({ id: 't', type: 'transfer', from: 'food', alloc: { util: 5000 }, amount: 5000, date: day, month: m });
+  const { get, spentM } = stats();
+  assert.equal(Math.round(fstate(food, get).balance), 5000);
+  assert.equal(Math.round(fstate(util, get).balance), 8000);
+  assert.equal(spentM, 0, 'перевод не трата');
+  assert.equal(Math.round(fstate(util, get).need), 0, 'коммуналка закрыта на месяц');
 });
