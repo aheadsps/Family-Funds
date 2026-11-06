@@ -89,7 +89,7 @@ function stats(skip){
       }
       if(inM) c.spentM+=amt;
     } else if(t.type==='paidmark'){
-      // «Уже оплачено»: платёж месяца выполнен, но деньги фонда не трогаем (трата не записана); долгов отметка не касается
+      // старая отметка «Уже оплачено» (новые не создаются, кнопку убрали): платёж месяца выполнен, но деньги фонда не трогаем (трата не записана); долгов отметка не касается
       const pf=S.funds.find(x=>x.id===t.fundId); if(pf&&pf.kind==='monthly'&&inM) get(t.fundId).spentM+=+t.amount||0;
     } else if(t.type==='transfer'){
       get(t.from).spent+=+t.amount||0;
@@ -658,7 +658,7 @@ function paymentsBlock(){
   return `<section class="block"><div class="sec-head"><h2>Ближайшие платежи</h2><button class="btn sm ghost" data-act="ics">${ic('calendar-plus')}В календарь</button></div><div class="list">${L.map(p=>{
     const debt=p.f.kind==='debt';
     const st=p.paidNow?'<span class="chip v-good">оплачено</span>':p.enough===null?'':p.enough?`<span class="chip v-good">${debt?'деньги отложены, внесите в банк':'в фонде хватает'}</span>`:`<span class="chip v-warn">${debt?'отложено не всё, не хватает':'в фонде не хватает'} ${fmt(p.short)}</span>`;
-    return `<div class="pay ${p.overdue?'overdue':''}">${fundIcon(p.f,'sm')}<div class="pb"><div class="pn">${esc(p.f.name)}</div><div class="note"><span class="when">${esc(p.when)}</span></div><div>${st}</div></div><div class="pr"><span class="pa">${p.amount>0?fmt(p.amount):''}</span>${S.canWrite&&!p.paidNow?`<button class="btn sm ghost" data-act="pay" data-id="${esc(p.f.id)}" data-amt="${Math.round(p.amount||0)}">Оплатил</button><button class="link sm" data-act="paid-mark" data-id="${esc(p.f.id)}" data-amt="${Math.round(p.amount||0)}">Уже оплачено</button>`:''}</div></div>`}).join('')}</div></section>`;
+    return `<div class="pay ${p.overdue?'overdue':''}">${fundIcon(p.f,'sm')}<div class="pb"><div class="pn">${esc(p.f.name)}</div><div class="note"><span class="when">${esc(p.when)}</span></div><div>${st}</div></div><div class="pr"><span class="pa">${p.amount>0?fmt(p.amount):''}</span>${S.canWrite&&!p.paidNow?`<button class="btn sm ${p.overdue?'primary':'ghost'}" data-act="pay" data-id="${esc(p.f.id)}" data-amt="${Math.round(p.amount||0)}" data-date="${p.overdue?isoD(p.due):''}">Оплатил</button>`:''}</div></div>`}).join('')}</div></section>`;
 }
 
 /* ---------- вкладка «Фонды» ---------- */
@@ -990,7 +990,7 @@ function openExpense(tx,preset){
   <div class="field"><label for="exSrc">Из какого фонда взяли деньги</label><select id="exSrc"><option value="">Из этого же фонда</option>${srcOpts.map(o=>`<option value="${esc(o.id)}" ${o.id===srcSel?'selected':''}>${esc(o.name)} · ${fmt(o.bal)}</option>`).join('')}</select></div>
   <div class="field cover" id="exCovBox" hidden><label for="exCov" id="exCovLbl"></label><select id="exCov"></select><span class="note" id="exCovNote"></span></div>
   ${L.length>1?accSelect('exAcc',isEdit?tx.acc:'','С какой карты платили'):''}
-  <div class="grid2"><div class="field"><label for="exDate">Дата</label><input type="date" id="exDate" value="${esc(isEdit?tx.date:today())}"></div><div class="field"><label for="exNote">Комментарий</label><input id="exNote" placeholder="Необязательно" value="${esc(isEdit?tx.note||'':preset.note||'')}"></div></div>
+  <div class="grid2"><div class="field"><label for="exDate">Дата</label><input type="date" id="exDate" value="${esc(isEdit?tx.date:(preset.date||today()))}"></div><div class="field"><label for="exNote">Комментарий</label><input id="exNote" placeholder="Необязательно" value="${esc(isEdit?tx.note||'':preset.note||'')}"></div></div>
   <div class="note" id="exHint"></div><div class="err" id="exErr"></div>
   <button class="btn primary" id="exSave">${isEdit?'Сохранить изменения':'Записать трату'}</button>`, ()=>{
     let covPick=isEdit&&tx.cover?tx.cover.fid:null;
@@ -1514,23 +1514,39 @@ function rewardCard(){
 function checkCard(){
   if(!S.canWrite) return '';
   if(!accounts().length) return `<section class="check-card"><div class="cc-main"><b>Сверка дня</b><span class="note">Добавьте карты и наличные с остатками. Тогда раз в день хватит сверить их с банком вместо записи каждой покупки.</span></div><button class="btn sm primary" data-act="go-res">Добавить карты</button></section>`;
-  const done=checkedSet(), n=checkDays(7).filter(d=>done.has(d)).length, ok=done.has(today());
-  return `<section class="check-card ${ok?'done':''}"><div class="cc-main"><b>${ok?'Сегодня всё сверено':'Сверка дня'}</b><span class="note">${ok?`За неделю ${n} из 7. Завтра снова 1⁠–⁠2 минуты.`:`Впишите остатки карт из банка, 1⁠–⁠2 минуты. За неделю ${n} из 7.`}</span><div class="cc-dots" role="img" aria-label="Сверок за 7 дней: ${n}">${checkDots(done)}</div></div><button class="btn sm ${ok?'ghost':'primary'}" data-act="open-check">${ok?'Ещё раз':'Сверить'}</button></section>`;
+  const done=checkedSet(), n=checkDays(7).filter(d=>done.has(d)).length, ok=done.has(today()), o=orderState();
+  if(o.need){
+    const parts=[o.overdue?`${o.overdue} ${plural(o.overdue,'платёж ждёт','платежа ждут','платежей ждут')} отметки`:'',o.gap>=2?`последняя сверка ${o.gap} ${plural(o.gap,'день','дня','дней')} назад`:''].filter(Boolean);
+    return `<section class="check-card order"><div class="cc-main"><b>Наведите порядок</b><span class="note">${parts.join(', ').replace(/^./,c=>c.toUpperCase())}. Пара минут, и всё снова сходится с банком.</span><div class="cc-dots" role="img" aria-label="Сверок за 7 дней: ${n}">${checkDots(done)}</div></div><button class="btn sm primary" data-act="open-check">Навести порядок</button></section>`;
+  }
+  return `<section class="check-card ${ok?'done':''}"><div class="cc-main"><b>${ok?'Сегодня всё сверено':'Сверка дня'}</b><span class="note">${ok?`За неделю ${n} из 7.${o.overdue?` Ждёт оплаты: ${o.overdue} ${plural(o.overdue,'платёж','платежа','платежей')}.`:''} Завтра снова 1⁠–⁠2 минуты.`:`Впишите остатки карт из банка, 1⁠–⁠2 минуты. За неделю ${n} из 7.`}</span><div class="cc-dots" role="img" aria-label="Сверок за 7 дней: ${n}">${checkDots(done)}</div></div><button class="btn sm ${ok?'ghost':'primary'}" data-act="open-check">${ok?'Ещё раз':'Сверить'}</button></section>`;
 }
 function openCheck(){
   const L=accounts(); if(!L.length){S.tab='res';S.enterNext=true;render();return}
   const exp={}; const ab=accBalances(); L.forEach(a=>exp[a.id]=Math.round(ab[a.id]||0));
-  const funds=checkFunds(), srcs=incomeSources(), fix={};
+  const funds=checkFunds(), srcs=incomeSources(), fix={}, td=today();
   const fundOpts=sel=>funds.map(f=>`<option value="${esc(f.id)}" ${f.id===sel?'selected':''}>${esc(f.name)}</option>`).join('');
-  openSheet(`${sheetHead('Сверка дня')}
+  // платежи, срок которых прошёл или сегодня: «Прошёл» записывает платёж на дату срока и уменьшает остаток карты по записям
+  const pays=orderState().pays.map(p=>{const d=isoD(p.due);return {f:p.f,amt:Math.round(p.amount||0),date:d<td?d:td,when:p.when,acc:(fundAcc(p.f)&&L.some(a=>a.id===fundAcc(p.f))?fundAcc(p.f):L[0].id),done:null}});
+  const paidOn=id=>sum(pays.filter(p=>p.done&&p.acc===id).map(p=>p.amt||0));
+  const expA=id=>exp[id]-paidOn(id);
+  const accOpts=sel=>L.map(a=>`<option value="${esc(a.id)}" ${a.id===sel?'selected':''}>${esc(a.name)}</option>`).join('');
+  openSheet(`${sheetHead(pays.length?'Наведём порядок':'Сверка дня')}
+  ${pays.length?`<p class="chk-h">Платежи</p><p class="note">Отметьте, какие уже прошли в банке: они запишутся на дату срока.</p>
+  <div class="list chk-pays">${pays.map((p,i)=>`<div class="row chk-pay" data-pay="${i}"><div class="row-main"><span class="name">${esc(fundEmoji(p.f))} ${esc(p.f.name)}</span><span class="note">${esc(p.when)}</span></div>
+    <div class="chk-line"><input class="chk-pamt" data-pamt="${i}" inputmode="decimal" autocomplete="off" value="${p.amt?nf.format(p.amt):''}" aria-label="Сумма платежа «${esc(p.f.name)}»"><div class="seg chk-pst"><button type="button" data-pst="${i}" data-v="1" aria-pressed="false">Прошёл</button><button type="button" data-pst="${i}" data-v="0" aria-pressed="false">Не платил</button></div></div>
+    ${L.length>1?`<div class="chk-pacc" data-paccw="${i}" hidden><label class="note" for="pacc${i}">С какой карты</label><select id="pacc${i}" data-pacc="${i}">${accOpts(p.acc)}</select></div>`:''}</div>`).join('')}</div>
+  <p class="chk-h">Остатки карт</p>`:''}
   <p class="note">Откройте приложение банка и впишите, сколько сейчас лежит. Если сумма совпадает, нажмите «Сходится». Пустое поле — карту сегодня не сверяем.</p>
-  <div class="list chk-accs">${L.map(a=>`<div class="row chk-acc"><div class="row-main"><span class="name">${accEmoji(a)} ${esc(a.name)}</span><span class="note">по записям ${fmt(exp[a.id])}</span></div>
+  <div class="list chk-accs">${L.map(a=>`<div class="row chk-acc"><div class="row-main"><span class="name">${accEmoji(a)} ${esc(a.name)}</span><span class="note" data-expn="${esc(a.id)}">по записям ${fmt(exp[a.id])}</span></div>
     <div class="chk-line"><input class="chk-in" data-acc="${esc(a.id)}" inputmode="decimal" autocomplete="off" placeholder="Сколько в банке" aria-label="Остаток «${esc(a.name)}» в банке"><button type="button" class="btn sm ghost" data-same="${esc(a.id)}">Сходится</button></div>
     <div class="chk-fix" data-fix="${esc(a.id)}"></div></div>`).join('')}</div>
   <div class="err" id="chkErr"></div>
   <button class="btn primary" id="chkSave">Готово</button>`, sh=>{
     const val=id=>{const el=sh.querySelector(`.chk-in[data-acc="${id}"]`);const v=el.value.trim();return v===''?null:Math.round(parseAmt(v))};
-    const diff=id=>{const v=val(id);return v===null?null:v-exp[id]};
+    const diff=id=>{const v=val(id);return v===null?null:v-expA(id)};
+    const refresh=()=>L.forEach(a=>{const el=sh.querySelector(`[data-expn="${a.id}"]`), x=paidOn(a.id);
+      if(el) el.textContent=`по записям ${fmt(expA(a.id))}`+(x>0?` после платежей`:''); drawFix(a.id)});
     const left=id=>{const F=fix[id];return -diff(id)-sum(F.lines.map(l=>l.amt||0))};
     const drawFix=id=>{
       const box=sh.querySelector(`[data-fix="${id}"]`), d=diff(id);
@@ -1551,6 +1567,7 @@ function openCheck(){
     };
     sh.addEventListener('input',e=>{const t=e.target;
       if(t.classList.contains('chk-in')){drawFix(t.dataset.acc);return}
+      if(t.dataset.pamt!==undefined){pays[+t.dataset.pamt].amt=Math.round(parseAmt(t.value))||0;if(pays[+t.dataset.pamt].done)refresh();return}
       if(t.dataset.lamt!==undefined){const id=t.dataset.acc, F=fix[id]; F.lines[+t.dataset.lamt].amt=Math.round(parseAmt(t.value));
         const rest=left(id), el=sh.querySelector(`[data-left="${id}"]`), add=sh.querySelector(`[data-ladd="${id}"]`);
         el.textContent=Math.abs(rest)<1?'Всё разнесено':rest>0?`Осталось разнести ${fmt(rest)}`:`Разнесено на ${fmt(-rest)} больше`; el.classList.toggle('neg',Math.abs(rest)>=1); add.hidden=rest<1}
@@ -1558,10 +1575,14 @@ function openCheck(){
     sh.addEventListener('change',e=>{const t=e.target;
       if(t.dataset.line!==undefined) fix[t.dataset.acc].lines[+t.dataset.line].fid=t.value;
       if(t.dataset.src!==undefined) fix[t.dataset.src].src=t.value;
+      if(t.dataset.pacc!==undefined){pays[+t.dataset.pacc].acc=t.value;refresh()}
     });
-    sh.addEventListener('focusout',e=>{const t=e.target;if(t.classList.contains('chk-in')||t.dataset.lamt!==undefined){const n=parseAmt(t.value);if(t.value.trim()&&!isNaN(n))t.value=nf.format(Math.round(n))}});
+    sh.addEventListener('focusout',e=>{const t=e.target;if(t.classList.contains('chk-in')||t.dataset.lamt!==undefined||t.dataset.pamt!==undefined){const n=parseAmt(t.value);if(t.value.trim()&&!isNaN(n))t.value=nf.format(Math.round(n))}});
     sh.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b) return;
-      if(b.dataset.same){const el=sh.querySelector(`.chk-in[data-acc="${b.dataset.same}"]`);el.value=nf.format(exp[b.dataset.same]);drawFix(b.dataset.same);return}
+      if(b.dataset.same){const el=sh.querySelector(`.chk-in[data-acc="${b.dataset.same}"]`);el.value=nf.format(expA(b.dataset.same));drawFix(b.dataset.same);return}
+      if(b.dataset.pst!==undefined){const i=+b.dataset.pst, P=pays[i]; P.done=b.dataset.v==='1';
+        sh.querySelectorAll(`[data-pst="${i}"]`).forEach(x=>x.setAttribute('aria-pressed',String((x.dataset.v==='1')===P.done)));
+        const w=sh.querySelector(`[data-paccw="${i}"]`); if(w) w.hidden=!P.done; refresh(); return}
       if(b.dataset.mode){fix[b.dataset.acc].mode=b.dataset.mode;drawFix(b.dataset.acc);return}
       if(b.dataset.ladd){const id=b.dataset.ladd,F=fix[id],rest=left(id);const used=new Set(F.lines.map(l=>l.fid));const nf_=funds.find(f=>!used.has(f.id))||funds[0];F.lines.push({fid:nf_?nf_.id:'',amt:Math.max(0,rest)});drawFix(id);return}
       if(b.dataset.ldel!==undefined){const id=b.dataset.acc;fix[id].lines.splice(+b.dataset.ldel,1);drawFix(id);return}
@@ -1569,16 +1590,20 @@ function openCheck(){
     $('#chkSave').addEventListener('click',async()=>{
       const err=$('#chkErr'); err.textContent='';
       const ids=L.map(a=>a.id).filter(id=>val(id)!==null);
-      if(!ids.length){err.textContent='Впишите остаток хотя бы одной карты или нажмите «Сходится».';return}
+      const paysDone=pays.filter(p=>p.done);
+      if(paysDone.some(p=>!(p.amt>0))){err.textContent='Впишите сумму у каждого прошедшего платежа.';return}
+      if(!ids.length&&!paysDone.length){err.textContent=pays.length?'Отметьте платежи или впишите остаток хотя бы одной карты.':'Впишите остаток хотя бы одной карты или нажмите «Сходится».';return}
       for(const id of ids){const d=diff(id); if(d<=-1){const F=fix[id]; if(!F.lines.length||F.lines.some(l=>!l.fid||!(l.amt>0))){err.textContent='Выберите фонд и сумму для каждой строки.';return}
         if(Math.abs(left(id))>=1){err.textContent=`«${accName(id)}»: разнесите ровно ${fmt(-d)}.`;return}}}
-      const date=today(), month=date.slice(0,7), at=Date.now(); let k=0, spent=0, inc=0, found=0, ok=false; const accs={};
+      const date=today(), month=date.slice(0,7), at=Date.now(); let k=0, spent=0, inc=0, found=0, paid=0, ok=false; const accs={};
       // доходы и «старые деньги» раскладываются по очереди: каждый следующий учитывает, что уже получили фонды
       const base=stats(), extra={}; const get=id=>{const s={...base.get(id)},x=extra[id]||0;s.alloc+=x;s.allocM+=x;return s};
       const take=d=>{const alloc={};d.rows.forEach(r=>{if(r.give>0){alloc[r.f.id]=r.give;extra[r.f.id]=(extra[r.f.id]||0)+r.give}});if(d.free>0){alloc._free=d.free;extra._free=(extra._free||0)+d.free}return alloc};
       await write(async()=>{
+        // сначала платежи: обычные записи на дату срока, как «Оплатил»
+        for(const p of paysDone){await DB.add('tx',{type:'expense',amount:p.amt,fundId:p.f.id,from:p.f.id,date:p.date,month:p.date.slice(0,7),note:'',acc:p.acc,cover:null,acc2:'',by:S.uid||null,createdAt:at+(++k)});paid+=p.amt}
         for(const id of ids){
-          const act=val(id), d=act-exp[id]; accs[id]={exp:exp[id],act};
+          const act=val(id), d=act-expA(id); accs[id]={exp:expA(id),act};
           if(d<=-1){for(const l of fix[id].lines){await DB.add('tx',{type:'expense',amount:l.amt,fundId:l.fid,from:l.fid,date,month,note:CHECK_NOTE,acc:id,cover:null,acc2:'',by:S.uid||null,createdAt:at+(++k)});spent+=l.amt}}
           else if(d>=1&&fix[id].mode==='income'){const x=srcs.find(z=>z.id===fix[id].src), taxable=x?x.taxable!==false:true;
             await DB.add('tx',{type:'income',amount:d,date,month,note:'Найдено при сверке',src:x?x.id:'',taxable,alloc:take(distribute(d,taxable,{get})),acc:id,by:S.uid||null,createdAt:at+(++k)});inc+=d}
@@ -1586,11 +1611,11 @@ function openCheck(){
             await saveAccount(id,{bal:act,at:at+(++k)});
             await DB.add('tx',{type:'income',found:true,amount:d,acc:'',taxable:false,alloc:take(distribute(d,false,{get,noPct:true})),date,month,note:'Деньги на карте учтены при сверке',by:S.uid||null,createdAt:at+(++k)});found+=d}
         }
-        await DB.add('tx',{type:'check',date,month,accs,by:S.uid||null,createdAt:at+(++k)}); ok=true;
-      },'Сверка записана');
-      if(!ok) return;
+        if(ids.length) await DB.add('tx',{type:'check',date,month,accs,by:S.uid||null,createdAt:at+(++k)}); ok=true;
+      },ids.length?'Сверка записана':'Платежи записаны');
+      if(!ok||!ids.length) return;
       const done=checkedSet(); done.add(date);
-      setTimeout(()=>openCheckDone({spent,inc,found,n:checkDays(7).filter(d=>done.has(d)).length,done}),250);
+      setTimeout(()=>openCheckDone({spent,inc,found,paid,n:checkDays(7).filter(d=>done.has(d)).length,done}),250);
     });
   });
 }
@@ -1599,9 +1624,9 @@ function rateRow(id){return `<div class="rate" id="${id}">${RATE_E.map((e,i)=>`<
 function checkTimeField(id){return `<div class="ics-row"><input type="time" id="${id}" data-nofocus="1" value="${esc(LS.get('ff-check-time')||'21:00')}" aria-label="Время напоминания"><button type="button" class="btn ghost" data-act="check-ics" data-time="${id}">${ic('calendar-plus')}В календарь</button></div>`}
 function openCheckDone(r){
   const askRate=S.uid&&!LS.get('ff-fb-check:'+S.uid), askIcs=!LS.get('ff-check-ics');
-  const parts=[r.spent?`траты ${fmt(r.spent)}`:'',r.inc?`доход ${fmt(r.inc)}`:'',r.found?`учтено ${fmt(r.found)}`:''].filter(Boolean);
+  const parts=[r.paid?`платежи ${fmt(r.paid)}`:'',r.spent?`траты ${fmt(r.spent)}`:'',r.inc?`доход ${fmt(r.inc)}`:'',r.found?`учтено ${fmt(r.found)}`:''].filter(Boolean);
   openSheet(`${sheetHead('Сверка дня')}
-  <div class="chk-done"><div class="chk-big water" role="img" aria-label="Всё сходится"><div class="wv"><i></i><i></i></div>${ic('check')}</div><h3>Всё сходится</h3><p class="note">${parts.length?`Записано: ${parts.join(', ')}. `:'Записи совпали с банком. '}За неделю ${r.n} из 7.</p><div class="cc-dots">${checkDots(r.done)}</div></div>
+  <div class="chk-done"><div class="chk-big water" role="img" aria-label="Всё сходится"><div class="wv"><i></i><i></i></div>${ic('check')}</div><h3>${r.paid?'Порядок наведён':'Всё сходится'}</h3><p class="note">${parts.length?`Записано: ${parts.join(', ')}. `:'Записи совпали с банком. '}За неделю ${r.n} из 7.</p><div class="cc-dots">${checkDots(r.done)}</div></div>
   ${askRate?`<div class="field"><span class="lbl">Насколько удобной была сверка?</span>${rateRow('chkRate')}<div id="chkRateMore" hidden><textarea id="chkRateText" rows="3" placeholder="Что было непонятно или неудобно? Необязательно"></textarea><button type="button" class="btn ghost" id="chkRateSend">Отправить комментарий</button></div></div>`:''}
   ${askIcs?`<div class="field"><span class="lbl">Напоминать каждый вечер</span>${checkTimeField('chkT')}<span class="note">В календаре телефона появится ежедневное событие со звуком и ссылкой на Поток.</span></div>`:''}
   <button class="btn primary" data-act="close">Закрыть</button>`,()=>{
@@ -1676,7 +1701,7 @@ function debtPaidM(id){
     else if(t.type==='expense'&&t.fundId===id) v+=+t.amount||0; }
   return v;
 }
-// Отметка «Уже оплачено»: платёж этого месяца оплачен, но трату записывать не нужно (деньги уже учтены). Фонды и карты не меняются
+// Старая отметка «Уже оплачено» (новые не создаются): платёж этого месяца оплачен, но трату записывать не нужно (деньги уже учтены). Фонды и карты не меняются
 const paidMarked=id=>{const m=curMonth();return S.tx.some(t=>t.type==='paidmark'&&t.fundId===id&&t.month===m)};
 function upcoming(days=7){
   const {get}=stats(); const now=new Date(); const t0=new Date(now.getFullYear(),now.getMonth(),now.getDate()); const out=[];
@@ -1706,6 +1731,14 @@ function upcoming(days=7){
     out.push({f,due,dd,overdue,amount,enough,short,when,paidNow:false});
   }
   return out.sort((a,b)=>(b.overdue-a.overdue)||a.dd-b.dd);
+}
+/* Порядок в бюджете: просроченные платежи и пропущенные дни сверки. Платежи сверка спрашивает первыми,
+   поэтому прошедший платёж записывается тратой на дату срока и не считается второй раз в разнице по карте. */
+function orderState(){
+  const pays=upcoming(0).filter(p=>p.overdue||p.dd===0), overdue=pays.filter(p=>p.overdue).length;
+  let last=null; for(const t of S.tx) if(t.type==='check'&&t.date&&(!last||t.date>last)) last=t.date;
+  const gap=last?Math.round((new Date(today()+'T12:00')-new Date(last+'T12:00'))/864e5):null;
+  return {pays,overdue,last,gap,need:(overdue>0&&last!==today())||(gap!==null&&gap>=2)};
 }
 function icsEsc(s){return String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n')}
 function icsFold(line){
@@ -1966,10 +1999,7 @@ document.addEventListener('click',async e=>{
   else if(act==='not-loan'){const f=fundById(a.dataset.id);if(f&&S.canWrite)write(async()=>{await DB.update('funds',f.id,{notLoan:true});f.notLoan=true},`Понял, «${f.name}» — обычный расход`)}
   else if(act==='advice-apply'){if(S.canWrite){if(S.household)S.household.debtStrategy='avalanche';DB.setHousehold({debtStrategy:'avalanche'});await applyStrategy('avalanche');render()}}
   else if(act==='nocut-fund'){const f=fundById(a.dataset.id);if(f&&S.canWrite)write(async()=>{await DB.update('funds',f.id,{noCut:true});f.noCut=true},`Больше не предлагаю сокращать «${f.name}»`)}
-  else if(act==='paid-mark'){const f=fundById(a.dataset.id);if(f&&S.canWrite){const date=today();
-    const id=await DB.add('tx',{type:'paidmark',fundId:f.id,amount:+a.dataset.amt||0,date,month:curMonth(),note:'',by:S.uid||null,createdAt:Date.now()});
-    toast(`«${f.name}» отмечен оплаченным`,{label:'Вернуть',fn:async()=>{try{await DB.del('tx',id);toast('Отметка снята')}catch(e){toast('Не получилось снять отметку.')}}})}}
-  else if(act==='pay'){const f=fundById(a.dataset.id);if(f&&S.canWrite)openExpense(null,{fundId:f.id,amount:+a.dataset.amt||0})}
+  else if(act==='pay'){const f=fundById(a.dataset.id);if(f&&S.canWrite)openExpense(null,{fundId:f.id,amount:+a.dataset.amt||0,date:a.dataset.date||''})}
   else if(act==='ics')exportICS();
   else if(act==='export-csv')exportCSV();
   else if(act==='export-json')exportJSON();
