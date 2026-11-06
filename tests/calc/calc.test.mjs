@@ -14,8 +14,8 @@ const pay = block(/^function isoD/, /^function icsEsc/);
 const shape = block(/^const RULE_UI/, /^function ruleHint/);
 const pend = block(/^function accounts\(\)/, /^function moveTitle/);
 const order = block(/^const FTIERS=/, /^function renderFunds/) + '\n' + block(/^function reorderGroup/, /^async function moveFund/);
-const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {weekStats,weekDiff,weekQuestion,weekText,rewardDue,quickSpends,noteFund,debtList,debtAdvice,debtTip,canPause,checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
-const { weekStats, weekDiff, weekQuestion, weekText, rewardDue, quickSpends, noteFund, debtList, debtAdvice, debtTip, canPause, checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
+const A = new Function('ic', core + '\n' + debts + '\n' + eta + '\n' + pay + '\n' + shape + '\n' + pend + '\n' + order + '\nreturn {orderState,weekStats,weekDiff,weekQuestion,weekText,rewardDue,quickSpends,noteFund,debtList,debtAdvice,debtTip,canPause,checkFunds,checkDays,checkedSet,paused,cutTip,incomeBasis,shiftMonth,reorderGroup,fundTier,debtPending,debtBank,reconcile,accBalances,S,stats,fstate,distribute,monthPicture,curMonth,simulate,etaSim,dlPlan,upcoming,fundShape,fundFields,tips,reallocIncome,reqParts,planCheck,debtBudget};')(() => '');
+const { orderState, weekStats, weekDiff, weekQuestion, weekText, rewardDue, quickSpends, noteFund, debtList, debtAdvice, debtTip, canPause, checkFunds, checkDays, checkedSet, paused, cutTip, incomeBasis, shiftMonth, reorderGroup, fundTier, debtPending, debtBank, reconcile, accBalances, S, stats, fstate, distribute, monthPicture, curMonth, simulate, etaSim, dlPlan, upcoming, fundShape, fundFields, tips, reallocIncome, reqParts, planCheck, debtBudget } = A;
 
 const m = curMonth(), day = m + '-10';
 const setup = (funds, tx = []) => { S.funds = funds.map((f, i) => ({ order: i, ...f })); S.tx = tx; S.household = {}; S.wishes = []; };
@@ -236,7 +236,7 @@ test('изменение суммы дохода: деньги сходятся 
   }
 });
 
-test('«Уже оплачено»: просроченный платёж уходит из ближайших, фонды и деньги не меняются', () => {
+test('старая отметка «Уже оплачено»: просроченный платёж уходит из ближайших, фонды и деньги не меняются', () => {
   const car = { id: 'car', name: 'Кредит жены', kind: 'monthly', value: 15000, payDay: 1 };
   setup([car, rest]);
   const L0 = upcoming(7);
@@ -249,7 +249,7 @@ test('«Уже оплачено»: просроченный платёж ухо�
   assert.equal(distribute(50000, true).rows.find(r => r.f.id === 'car').give, 0);
 });
 
-test('«Уже оплачено» для долга: ожидание платежа в «Ресурсах» закрывается', () => {
+test('старая отметка «Уже оплачено» для долга: ожидание платежа в «Ресурсах» закрывается', () => {
   const debt = { id: 'd', name: 'Кредит', kind: 'debt', value: 100000, minPay: 10000, payDay: 1 };
   setup([debt, rest]); S.household = { accSince: 1 };
   S.tx.push({ id: 'i', type: 'income', amount: 50000, alloc: { d: 10000, rest: 40000 }, date: m + '-02', month: m, createdAt: 2 });
@@ -678,4 +678,33 @@ test('награда за неделю сверок: нужно 5 дней из 
   assert.equal(rewardDue(), 5);
   S.uid = null;
   assert.equal(rewardDue(), null);
+});
+
+/* ---------- «Наведите порядок» ---------- */
+test('порядок: просроченный платёж и пропущенные дни сверки включают «Наведите порядок»', () => {
+  const day = new Date().getDate();
+  const flat = { id: 'flat', name: 'Аренда', kind: 'monthly', value: 30000, payDay: 1 };
+  setup([flat, rest]);
+  S.tx.push({ id: 'c', type: 'check', date: dAgo(1), month: m, accs: {} });
+  const o = orderState();
+  if (day > 1) {
+    assert.equal(o.overdue, 1); assert.equal(o.need, true); assert.equal(o.pays[0].f.id, 'flat');
+    // сегодня уже сверились и ответили «Не платил»: карточка молчит до завтра, платёж остаётся просроченным
+    S.tx.push({ id: 'c0', type: 'check', date: dAgo(0), month: m, accs: {} });
+    assert.equal(orderState().need, false); assert.equal(orderState().overdue, 1);
+  }
+  else { assert.equal(o.overdue, 0); assert.equal(o.pays.length, 1, 'срок сегодня: платёж в списке, но не просрочен'); }
+  // платёж записан тратой: порядок наведён
+  S.tx.push(ex('p', 'flat', 30000, 0));
+  const o2 = orderState();
+  assert.equal(o2.overdue, 0); assert.equal(o2.pays.length, 0); assert.equal(o2.need, false);
+});
+
+test('порядок: сверка три дня назад, сегодня и никогда', () => {
+  setup([food, rest]);
+  assert.deepEqual([orderState().gap, orderState().need], [null, false], 'сверок не было: обычная карточка');
+  S.tx.push({ id: 'c1', type: 'check', date: dAgo(3), month: m, accs: {} });
+  assert.deepEqual([orderState().gap, orderState().need], [3, true]);
+  S.tx.push({ id: 'c2', type: 'check', date: dAgo(1), month: m, accs: {} });
+  assert.deepEqual([orderState().gap, orderState().need], [1, false], 'вчера сверялись: всё в порядке');
 });
