@@ -658,7 +658,7 @@ function paymentsBlock(){
   const L=upcoming(7); if(!L.length) return '';
   return `<section class="block"><div class="sec-head"><h2>Ближайшие платежи</h2><button class="btn sm ghost" data-act="ics">${ic('calendar-plus')}В календарь</button></div><div class="list">${L.map(p=>{
     const debt=p.f.kind==='debt';
-    const st=p.paidNow?'<span class="chip v-good">оплачено</span>':p.enough===null?'':p.enough?`<span class="chip v-good">${debt?'деньги отложены, внесите в банк':'в фонде хватает'}</span>`:`<span class="chip v-warn">${debt?'отложено не всё, не хватает':'в фонде не хватает'} ${fmt(p.short)}</span>`;
+    const st=p.paidNow?'<span class="chip v-good">оплачено</span>':p.enough===null?'':p.enough?`<span class="chip v-good${debt?' two':''}">${debt?'деньги отложены,<br>внесите в банк':'в фонде хватает'}</span>`:`<span class="chip v-warn two">${debt?'отложено не всё,<br>не хватает':'в фонде<br>не хватает'} ${fmt(p.short)}</span>`;
     return `<div class="pay ${p.overdue?'overdue':''}">${fundIcon(p.f,'sm')}<div class="pb"><div class="pn">${esc(p.f.name)}</div><div class="note"><span class="when">${esc(p.when)}</span></div><div>${st}</div></div><div class="pr"><span class="pa">${p.amount>0?fmt(p.amount):''}</span>${S.canWrite&&!p.paidNow?`<button class="btn sm ${p.overdue?'primary':'ghost'}" data-act="pay" data-id="${esc(p.f.id)}" data-amt="${Math.round(p.amount||0)}" data-date="${p.overdue?isoD(p.due):''}">Оплатил</button>`:''}</div></div>`}).join('')}</div></section>`;
 }
 
@@ -692,7 +692,7 @@ function renderFunds(){
     </div>`};
   h+=`<div id="fundList">${FTIERS.map(([id,t,d,fn])=>{const L=funds.filter(fn); if(!L.length) return '';
     return `<section class="block tier"><h2>${t}</h2><p class="note">${d}</p><div class="list river" data-tier="${id}">${L.map((f,i)=>row(f,i,L.length,id==='queue'&&L.length>1)).join('')}</div></section>`}).join('')}</div>`;
-  if(S.canWrite) h+=`<button class="btn primary" data-act="new-fund">${ic('plus')}Добавить фонд</button>`;
+  if(S.canWrite) h+=`<div class="btn-col"><button class="btn primary" data-act="new-fund">${ic('plus')}Добавить фонд</button><button class="btn ghost" data-act="open-shift">${ic('arrow-left-right')}Перевести между фондами</button></div>`;
   return h;
 }
 
@@ -846,7 +846,7 @@ function closeSheet(force){
 }
 function backHere(el){if(el&&el.closest&&el.closest('#sheet')&&S.sheetReopen){const re=S.sheetReopen,sc=$('#sheet').scrollTop;sheetBackNext=()=>re(sc)}}
 function sheetHead(t){return `<div class="sheet-head"><h2>${t}</h2><button class="x" data-act="close" aria-label="Закрыть">${ic('x')}</button></div>`}
-function typeSeg(active){return `<div class="seg"><button data-act="open-income" aria-pressed="${active==='income'}">Доход</button><button data-act="open-expense" aria-pressed="${active==='expense'}">Трата</button></div>`}
+function typeSeg(active){return `<div class="seg"><button data-act="open-income" aria-pressed="${active==='income'}">Доход</button><button data-act="open-expense" aria-pressed="${active==='expense'}">Трата</button><button data-act="open-shift" aria-pressed="${active==='shift'}">Перевод</button></div>`}
 
 function splitLine(d){
   const G=groupSplit(d.rows,d.free);
@@ -897,6 +897,41 @@ function openDeleteIncome(t){
   });
 }
 // Доход и «разложить» без ручной раскладки: сумма делится по правилам фондов
+function openShift(fromId){
+  if(!S.canWrite) return;
+  const src=shiftSources();
+  if(!src.length){toast('Пока ни в одном фонде нет денег, переводить нечего.');return}
+  const from0=src.some(x=>x.id===fromId)?fromId:src[0].id;
+  const toList=id=>activeFunds().filter(f=>f.id!==id&&!(f.kind==='percent'&&f.taxOnly));
+  const toOpts=(id,sel)=>toList(id).map(f=>`<option value="${esc(f.id)}" ${f.id===sel?'selected':''}>${esc(fundEmoji(f))} ${esc(f.name)}</option>`).join('');
+  openSheet(`${sheetHead('Перевод между фондами')}${typeSeg('shift')}
+  <p class="note">Деньги переходят из одного фонда в другой. Доход и траты от этого не меняются.</p>
+  <div class="field"><label for="shFrom">Откуда</label><select id="shFrom">${src.map(x=>`<option value="${esc(x.id)}" ${x.id===from0?'selected':''}>${esc(x.id==='_free'?'Без фонда':fundEmoji(fundById(x.id))+' '+x.name)} · ${fmt(x.bal)}</option>`).join('')}</select></div>
+  <div class="field"><label for="shTo">Куда</label><select id="shTo">${toOpts(from0,'')}</select></div>
+  <div class="field"><label for="shAmt">Сумма</label><input class="big" id="shAmt" inputmode="decimal" placeholder="0 ₽" autocomplete="off"><div class="chips sh-q"><button type="button" class="chip-btn" data-shq="1">Всё</button><button type="button" class="chip-btn" data-shq=".5">Половину</button></div></div>
+  <div class="field"><label for="shNote">Комментарий</label><input id="shNote" data-nofocus="1" placeholder="Например: решили вдвоём" autocomplete="off"></div>
+  <div id="shHint"></div><div class="err" id="shErr"></div>
+  <button class="btn primary" id="shSave">${ic('arrow-left-right')}Перевести</button>`,()=>{
+    const bal=()=>(src.find(x=>x.id===$('#shFrom').value)||{bal:0}).bal, amt=()=>Math.round(parseAmt($('#shAmt').value))||0;
+    const hint=()=>{const a=amt(), fid=$('#shFrom').value, tid=$('#shTo').value, t=fundById(tid), box=$('#shHint'); if(!a||!t){box.innerHTML='';return}
+      const {get}=stats(), tb=Math.round(fstate(t,get).balance), fa=fid==='_free'?'':fundAcc(fundById(fid)), ta=fundAcc(t);
+      box.innerHTML=`<p class="note">В «${esc(fundName(fid))}» останется ${fmt(bal()-a)}, в «${esc(t.name)}» станет ${fmt(tb+a)}.${fa&&ta&&fa!==ta?` Фонды лежат на разных картах: после перевода подскажем, что переложить между ними.`:''}</p>`};
+    $('#shFrom').addEventListener('change',()=>{const cur=$('#shTo').value; $('#shTo').innerHTML=toOpts($('#shFrom').value,cur); hint()});
+    $('#shTo').addEventListener('change',hint); $('#shAmt').addEventListener('input',hint);
+    $('#shAmt').addEventListener('blur',()=>{const n=amt();if(n)$('#shAmt').value=nf.format(n)});
+    $('.sh-q').addEventListener('click',e=>{const b=e.target.closest('[data-shq]'); if(!b) return; $('#shAmt').value=nf.format(Math.round(bal()*+b.dataset.shq)); hint()});
+    $('#shSave').addEventListener('click',async()=>{
+      const a=amt(), fid=$('#shFrom').value, tid=$('#shTo').value, err=$('#shErr');
+      if(!(a>0)){err.textContent='Впишите сумму больше нуля.';return}
+      if(!tid){err.textContent='Выберите, в какой фонд перевести.';return}
+      if(a>bal()){err.textContent=`В «${fundName(fid)}» сейчас только ${fmt(bal())}.`;return}
+      const date=today();
+      let done=false; const note=$('#shNote').value.trim();
+      await write(async()=>{await DB.add('tx',{type:'transfer',from:fid,alloc:{[tid]:a},amount:a,date,month:date.slice(0,7),note,by:S.uid||null,createdAt:Date.now()});done=true},`Переведено ${fmt(a)} в «${fundName(tid)}»`);
+      if(done) setTimeout(()=>openMoves(false),400);
+    });
+  });
+}
 function openIncome(mode,tx){
   const isFree=mode==='free', isFound=mode==='found', isEdit=!!tx, skip=isEdit?tx.id:null;
   const R=isFound?reconcile():null;
@@ -913,6 +948,7 @@ function openIncome(mode,tx){
   <div class="grid2"><div class="field"><label for="inDate">Дата</label><input type="date" id="inDate" value="${esc(isEdit?tx.date:today())}"></div><div class="field"><label for="inNote">Комментарий</label><input id="inNote" data-nofocus="1" placeholder="Необязательно" value="${esc(isEdit?tx.note||'':'')}"></div></div>
   ${hasTax?`<label class="check"><input type="checkbox" id="inTax" ${isEdit?(tx.taxable===false?'':'checked'):'checked'}> Облагается налогом</label>`:''}`}
   <div id="planBox"></div>
+  ${isEdit?'':`<div id="manBox" class="man" hidden></div><button type="button" class="btn ghost" id="inMan">${ic('sliders-horizontal')}Распределю сам</button>`}
   <div class="err" id="inErr"></div>
   <button class="btn primary" id="inSave">${isEdit?'Сохранить изменения':isFree||isFound?'Разложить':'Записать'}</button>`, ()=>{
     const taxable=()=>$('#inTax')?$('#inTax').checked:false;
@@ -926,7 +962,44 @@ function openIncome(mode,tx){
     const draw=()=>{if(isEdit)return drawEdit(); const d=calc(); const box=$('#planBox');
       if(!d){box.innerHTML=`<p class="note">Деньги разойдутся по фондам сами: сначала налог, потом жизнь (еда, жильё, связь), потом минимальные платежи по долгам, потом планы по срокам, остальное сверх плана.</p>`;return}
       box.innerHTML=`<div class="eyebrow">Разойдётся само</div>${splitLine(d)}${d.short>0.5?`<p class="note">На обязательное в этом месяце ещё не хватит ${fmt(d.short)}: эти деньги разделены между обязательными фондами пропорционально.</p>`:''}`};
+    // «Распределю сам»: налог отложится сам, остальное по фондам, которые выбрал человек
+    let man=false; const mrows=[];
+    const mFunds=()=>activeFunds().filter(f=>!(f.kind==='percent'&&f.taxOnly));
+    const mTax=()=>{const amt=Math.round(parseAmt($('#inAmt').value)); if(!(amt>0)||isFree||isFound||!taxable()) return {};
+      const d=distribute(amt,true,{skip}), t={}; d.rows.forEach(r=>{if(r.f.kind==='percent'&&r.f.taxOnly&&r.give>0)t[r.f.id]=r.give}); return t};
+    const mPool=()=>Math.max(0,Math.round(parseAmt($('#inAmt').value))-sum(Object.values(mTax())));
+    const mLeft=()=>mPool()-sum(mrows.map(r=>Math.round(+r.amt||0)));
+    const mSum=()=>{const el=$('#manSum'); if(!el) return; const l=mLeft(), pool=mPool();
+      el.className='note man-sum'+(l<0?' bad':'');
+      el.textContent=!pool?'Сначала впишите сумму.':l<0?`Больше суммы на ${fmt(-l)}. Уменьшите какой-нибудь фонд.`:l>0?`Распределено ${fmt(pool-l)} из ${fmt(pool)}. ${fmt(l)} останется без фонда.`:`Всё распределено: ${fmt(pool)}.`;
+      const {get}=stats(skip);
+      mrows.forEach((r,i)=>{const f=fundById(r.id), w=$(`[data-mw="${i}"]`); if(!w||!f) return; const s=fstate(f,get), room=(f.kind==='debt'||f.kind==='goal')?Math.round(s.remaining):null;
+        w.textContent=room!==null&&r.amt>room+.5?`Фонду нужно только ${fmt(room)}, остальное ляжет сверх плана.`:''})};
+    const drawMan=()=>{const box=$('#manBox'); if(!box) return; const tax=sum(Object.values(mTax())), used=new Set(mrows.map(r=>r.id));
+      const opts=mFunds().filter(f=>!used.has(f.id)).map(f=>`<option value="${esc(f.id)}">${esc(fundEmoji(f))} ${esc(f.name)}</option>`).join('');
+      box.innerHTML=`<div class="eyebrow">Распределю сам</div>
+      ${tax>0?`<p class="note">Налог ${fmt(tax)} отложится сам. Если с этих денег налог не платится, снимите галочку выше.</p>`:''}
+      <div class="man-rows">${mrows.map((r,i)=>{const f=fundById(r.id);return `<div class="man-r"><span class="man-n">${esc(fundEmoji(f))} ${esc(f?f.name:'Фонд')}</span><input data-mi="${i}" inputmode="decimal" autocomplete="off" value="${r.amt?nf.format(r.amt):''}" placeholder="0 ₽" aria-label="Сколько в «${esc(f?f.name:'')}»"><button type="button" class="x" data-mx="${i}" aria-label="Убрать «${esc(f?f.name:'')}»">${ic('x')}</button><span class="note man-w" data-mw="${i}"></span></div>`}).join('')}</div>
+      ${opts?`<select id="manPick" aria-label="Добавить фонд"><option value="">${mrows.length?'Добавить ещё фонд':'Выберите фонд'}</option>${opts}</select>`:''}
+      ${mrows.length>1?`<div class="man-act"><button type="button" class="chip-btn" data-man="even">Поровну</button><button type="button" class="chip-btn" data-man="last">Остаток в последний</button></div>`:''}
+      <p class="note man-sum" id="manSum"></p>`;
+      mSum()};
+    const setMan=on=>{man=on; $('#manBox').hidden=!on; $('#planBox').hidden=on; $('#inMan').innerHTML=on?`${ic('layers')}Пусть разойдётся само`:`${ic('sliders-horizontal')}Распределю сам`; if(on) drawMan()};
+    $('#inMan')?.addEventListener('click',()=>setMan(!man));
+    $('#manBox')?.addEventListener('change',e=>{if(e.target.id!=='manPick'||!e.target.value) return;
+      mrows.push({id:e.target.value,amt:Math.max(0,mLeft()),touched:false}); drawMan()});
+    $('#manBox')?.addEventListener('input',e=>{const i=e.target.dataset.mi; if(i===undefined) return; mrows[+i].amt=Math.round(parseAmt(e.target.value))||0; mrows[+i].touched=true; mSum()});
+    $('#manBox')?.addEventListener('focusout',e=>{const i=e.target.dataset.mi; if(i!==undefined&&mrows[+i].amt) e.target.value=nf.format(mrows[+i].amt)});
+    $('#manBox')?.addEventListener('click',e=>{const x=e.target.closest('[data-mx]'), b=e.target.closest('[data-man]');
+      if(x){mrows.splice(+x.dataset.mx,1); drawMan(); return}
+      if(!b) return;
+      if(b.dataset.man==='even'){evenSplit(mPool(),mrows.length).forEach((a,i)=>{mrows[i].amt=a;mrows[i].touched=true})}
+      else{const k=mrows.length-1; mrows[k].amt=Math.max(0,mrows[k].amt+mLeft()); mrows[k].touched=true}
+      drawMan()});
+    // одна строка, которую не трогали руками, следует за суммой дохода
+    const follow=()=>{if(man&&mrows.length===1&&!mrows[0].touched){mrows[0].amt=mPool(); const el=$('[data-mi="0"]'); if(el) el.value=mrows[0].amt?nf.format(mrows[0].amt):''} if(man) drawMan()};
     $('#inAmt').addEventListener('input',draw); $('#inTax')?.addEventListener('change',draw); draw();
+    $('#inAmt').addEventListener('input',()=>{if(man)follow()}); $('#inTax')?.addEventListener('change',()=>{if(man)follow()});
     // источник: свои источники семьи, а пока их нет, шаблоны (создаются при сохранении). Последний выбранный подставляется сам
     let src=isEdit?(tx.src||''):'', srcPick='';
     if(!isEdit&&!isFree&&!isFound){const last=LS.get('ff-src-in:'+S.hid);if(last&&incomeSources().some(z=>z.id===last))src=last}
@@ -951,10 +1024,15 @@ function openIncome(mode,tx){
       const amt=Math.round(parseAmt($('#inAmt').value)); if(amt<=0){$('#inErr').textContent='Введите сумму больше нуля.';return}
       let alloc={};
       if(isEdit) alloc=edited();
+      else if(man){
+        if(!mrows.some(r=>r.amt>0)){$('#inErr').textContent='Выберите фонд и впишите, сколько в него положить.';return}
+        if(mLeft()<0){$('#inErr').textContent=`Распределено больше суммы на ${fmt(-mLeft())}.`;return}
+        alloc=manualAlloc(amt,mTax(),mrows).alloc;
+      }
       else{const d=calc(); d.rows.forEach(r=>{if(r.give>0)alloc[r.f.id]=r.give}); if(d.free>0)alloc._free=(alloc._free||0)+d.free}
       if(isFree){
         if(amt>freeBal){$('#inErr').textContent=`Без фонда лежит только ${fmt(freeBal)}.`;return}
-        delete alloc._free; const moved=sum(Object.values(alloc)); if(moved<=0){$('#inErr').textContent='Все фонды заполнены, раскладывать некуда.';return}
+        delete alloc._free; const moved=sum(Object.values(alloc)); if(moved<=0){$('#inErr').textContent=man?'Выберите фонд и впишите сумму.':'Все фонды заполнены, раскладывать некуда.';return}
         await write(async()=>{await DB.add('tx',{type:'transfer',from:'_free',alloc,amount:moved,date:today(),month:curMonth(),note:'',by:S.uid||null,createdAt:Date.now()})},'Деньги разложены по фондам');
         return;
       }
@@ -968,7 +1046,7 @@ function openIncome(mode,tx){
       if(src) LS.set('ff-src-in:'+S.hid,src);
       const data={amount:amt,date,month:date.slice(0,7),note,src,taxable:hasTax?taxable():(isEdit?tx.taxable!==false:true),alloc,acc};
       if(isEdit) await write(async()=>{await DB.update('tx',tx.id,data)},'Доход изменён');
-      else{await write(async()=>{await DB.add('tx',{type:'income',...data,by:S.uid||null,createdAt:Date.now()})},'Доход записан и разложен по фондам');
+      else{await write(async()=>{await DB.add('tx',{type:'income',...data,...(man?{manual:true}:{}),by:S.uid||null,createdAt:Date.now()})},man?'Доход записан и распределён, как вы решили':'Доход записан и разложен по фондам');
         if(acc) setTimeout(()=>openMoves(true),400)}
     });
   });
@@ -1131,6 +1209,7 @@ function openFund(f,kindPreset){
     <p class="note">${s.collected-s.balance>0.5?`Накоплено ${fmt(s.collected)}, потрачено ${fmt(s.collected-s.balance)}. `:''}${s.balance>0.5?`В фонде осталось ${fmt(s.balance)}. Закройте фонд, и остаток уйдёт туда, куда скажете.`:s.balance<-0.5?`Фонд в минусе на ${fmt(-s.balance)}. Закройте фонд, и минус покроется из выбранного фонда.`:'Закройте фонд, чтобы он больше не забирал деньги.'}</p>
     ${Math.abs(s.balance)>0.5?`<div class="field"><label for="fCloseTo">${s.balance>0?'Куда перенести остаток':'Из какого фонда покрыть минус'}</label><select id="fCloseTo">${activeFunds().filter(x=>x.id!==f.id&&x.kind!=='debt').sort((x,y)=>(y.kind==='rest')-(x.kind==='rest')).map(x=>`<option value="${esc(x.id)}">${esc(x.name)} · ${fmt(fstate(x,get).balance)}</option>`).join('')}<option value="_free">Без фонда</option></select></div>`:''}
     <button class="btn primary" id="fClose">${ic('check')}${f.isDebt?'Долг оплачен, закрыть':'Цель выполнена, закрыть'}</button></section>`:''}
+  ${!isNew&&S.canWrite&&f.kind!=='debt'&&Math.round(fstate(f,stats().get).balance)>0?`<button class="btn ghost" data-act="open-shift" data-id="${esc(f.id)}">${ic('arrow-left-right')}Перевести в другой фонд</button>`:''}
   ${!isNew&&canPause(f)?`<button class="btn ghost" id="fPause">${paused(f)?`${ic('play')}Снять с паузы`:`${ic('pause')}Пауза на ${NOM[+curMonth().slice(5)-1].toLowerCase()}`}</button><span class="note">${paused(f)?'В этом месяце фонд не получает деньги. С начала следующего всё вернётся само.':'В этом месяце фонд не будет получать деньги и напоминать о платеже. С начала следующего всё вернётся само.'}</span>`:''}
   ${isNew||isReward?'':`<button class="btn danger" id="fDel">${ic('trash')}Удалить фонд</button>`}`, ()=>{
     $('#fPause')?.addEventListener('click',()=>setPause(f,!paused(f)));
@@ -1511,6 +1590,26 @@ function rewardCard(){
   const n=rewardDue(); if(!n) return '';
   const rf=activeFunds().find(f=>f.kind==='reward'), bal=rf?Math.max(0,Math.round(fstate(rf,stats().get).balance)):0, can=bal>0&&S.canWrite;
   return `<section class="card rew"><div class="rew-t"><span class="rew-e">🏆</span><div><b>Неделя сверок: ${n} из 7</b><span class="note">${bal>0?`В фонде наград ${fmt(bal)}. Выберите, что себе позволить.`:'Награды копятся с каждого дохода. Бюджет в порядке, это стоит отметить.'}</span></div></div><div class="wk-act">${can?'<button class="btn sm primary" data-act="rew-pick">Выбрать награду</button>':''}<button class="btn sm ghost" data-act="rew-close">${can?'Позже':'Спасибо'}</button></div></section>`;
+}
+/* ---------- ручное распределение и перевод между фондами ---------- */
+// Поровну: целые рубли, остаток от деления уходит первым строкам, сумма сходится до рубля
+function evenSplit(total,n){
+  total=Math.max(0,Math.round(total)); if(!(n>0)) return [];
+  const base=Math.floor(total/n), r=total-base*n; return Array.from({length:n},(_,i)=>base+(i<r?1:0));
+}
+// Откуда можно перевести: фонды, где лежат деньги, и «без фонда». Долги (их деньги ждут платежа в банк) и налог не отдают
+function shiftSources(){
+  const {get}=stats(), L=activeFunds().filter(f=>f.kind!=='debt'&&!(f.kind==='percent'&&f.taxOnly)).map(f=>({id:f.id,name:f.name,bal:Math.round(fstate(f,get).balance)})).filter(x=>x.bal>0);
+  const free=Math.round(monthPicture().free); if(free>0) L.push({id:'_free',name:'Без фонда',bal:free});
+  return L;
+}
+// Ручная раскладка дохода: налог берётся сам (если отмечен), остальное по строкам человека, нераспределённое остаётся без фонда
+function manualAlloc(amt,tax,rows){
+  const alloc={}; let used=0;
+  for(const [id,a] of Object.entries(tax||{})) if(a>0){alloc[id]=(alloc[id]||0)+a; used+=a}
+  for(const r of rows){const a=Math.round(+r.amt||0); if(a>0&&r.id){alloc[r.id]=(alloc[r.id]||0)+a; used+=a}}
+  const left=Math.round(amt)-used; if(left>0) alloc._free=(alloc._free||0)+left;
+  return {alloc,left};
 }
 function checkCard(){
   if(!S.canWrite) return '';
@@ -2038,6 +2137,7 @@ document.addEventListener('click',async e=>{
   if(await wzAction(act,a))return;
   if(act==='close')closeSheet();
   else if(act==='open-income'){if(S.canWrite)openIncome()}
+  else if(act==='open-shift'){if(S.canWrite)openShift(a.dataset.id||'')}
   else if(act==='open-expense'){if(S.canWrite)openExpense()}
   else if(act==='quick-spend')quickSpend(a.dataset.fund,a.dataset.amt,a.dataset.note);
   else if(act==='week-open')openWeek();

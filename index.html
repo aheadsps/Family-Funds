@@ -232,6 +232,19 @@ body.is-dragging{user-select:none;-webkit-user-select:none;cursor:grabbing}
 .pay .pn{font-weight:600;overflow-wrap:anywhere}
 .pay .pr{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .pay .pa{font-weight:600;white-space:nowrap}
+.pay .chip.two{white-space:normal;line-height:1.3;padding:3px 8px;border-radius:10px;max-width:100%}
+.man{display:flex;flex-direction:column;gap:10px}
+.man-rows{display:flex;flex-direction:column;gap:8px}
+.man-r{display:grid;grid-template-columns:minmax(0,1fr) 120px 40px;gap:8px;align-items:center}
+.man-n{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.man-r input{padding:11px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--field);font-weight:600;min-width:0}
+.man-r .x{width:40px;height:40px}
+.man-w{grid-column:1/-1}
+.man-w:empty{display:none}
+.man select{width:100%;padding:11px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--field)}
+.man-act{display:flex;gap:8px;flex-wrap:wrap}
+.man-sum.bad{color:var(--bad);font-weight:600}
+.btn-col{display:flex;flex-direction:column;gap:10px}
 .pay .link.sm{font-size:13px;padding:2px 0;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
 .pay.overdue .when{color:var(--bad);font-weight:600}
 
@@ -274,7 +287,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .x{width:36px;height:36px;border-radius:50%;border:0;background:var(--surface-2);display:grid;place-items:center}
 .x .ic{width:18px;height:18px}
 .x.sm{width:36px;height:36px}
-.seg{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);background:var(--surface-2);border-radius:var(--r-sm);padding:4px;gap:4px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface-2);border-radius:var(--r-sm);padding:4px;gap:4px}
 .seg.three{grid-template-columns:repeat(3,minmax(0,1fr))}
 .seg button{border:0;background:none;padding:9px 6px;border-radius:9px;font-weight:600;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px}
 .seg button .ic{width:16px;height:16px}
