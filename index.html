@@ -698,6 +698,36 @@ a.btn{text-decoration:none;display:flex;align-items:center;justify-content:cente
 .wza .sfx{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:15px;pointer-events:none}
 .wza select,.wzf-rate select,.row.place select,.field.cover select{-webkit-appearance:none;appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23889AAB' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center;background-size:16px}
 .wzf-rate select{max-width:190px}
+
+/* поддержка: чат и окно согласия на очистку */
+.icon-btn{position:relative}
+.icon-btn.has-dot::after{content:"";position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%;background:var(--bad);box-shadow:0 0 0 2px var(--surface)}
+.dot-new{margin-left:auto;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--bad);color:#fff}
+.sup-list{display:flex;flex-direction:column;gap:10px;max-height:min(52vh,460px);overflow-y:auto;overscroll-behavior:contain;padding:4px 2px}
+.sup-empty{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;color:var(--muted);padding:22px 8px}
+.sup-empty .ic{width:30px;height:30px;color:var(--accent)} .sup-empty b{color:var(--ink)}
+.msg{display:flex;flex-direction:column;gap:3px;max-width:86%}
+.msg.me{align-self:flex-end;align-items:flex-end} .msg.them{align-self:flex-start}
+.msg .bub{padding:10px 13px;border-radius:16px;white-space:pre-wrap;word-break:break-word;line-height:1.4}
+.msg.me .bub{background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:6px}
+.msg.them .bub{background:var(--surface-2);border-bottom-left-radius:6px}
+.msg.sys .bub{background:var(--accent-soft);color:var(--ink);border:1px dashed var(--accent-2)}
+.msg .who,.msg .when{font-size:12px;color:var(--muted)}
+.sup-compose{display:flex;gap:8px;align-items:flex-end}
+.sup-compose textarea{flex:1;min-height:48px;max-height:140px;padding:12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--field);resize:none}
+.sup-compose .btn{flex:none;width:48px;height:48px;padding:0}
+.wipe-gate{position:fixed;inset:0;z-index:45;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px 18px calc(24px + var(--sab));overflow-y:auto}
+.wipe-gate .wg-in{max-width:420px;width:100%;display:flex;flex-direction:column;gap:14px}
+.wipe-gate .wg-ic{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--bad-soft);color:var(--bad)}
+.wipe-gate .wg-ic .ic{width:26px;height:26px}
+.wipe-gate h2{margin:0;font-size:22px}
+.wipe-gate p{margin:0}
+.wipe-gate .wg-box{display:flex;flex-direction:column;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:14px}
+.wipe-gate .wg-box div{display:flex;flex-direction:column;gap:2px} .wipe-gate .wg-box span{color:var(--muted)}
+.wipe-gate .wg-check{display:flex;gap:10px;align-items:flex-start;font-size:15px}
+.wipe-gate .wg-check input{width:20px;height:20px;margin-top:1px;flex:none}
+.wipe-gate .wg-btns{display:flex;flex-direction:column;gap:10px}
+.wipe-gate .btn[disabled]{opacity:.5}
 </style>
 <script>['gesturestart','gesturechange','gestureend'].forEach(function(e){document.addEventListener(e,function(ev){ev.preventDefault()})});var _t=0;document.addEventListener('touchend',function(ev){if(ev.target.closest&&ev.target.closest('input,select,textarea'))return;var n=Date.now();if(n-_t<350)ev.preventDefault();_t=n},{passive:false});</script>
 </head>

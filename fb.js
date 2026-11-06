@@ -125,3 +125,29 @@ export function update(col, id, data) { return fire(F.updateDoc(d('households', 
 export function del(col, id) { return fire(F.deleteDoc(d('households', hid, col, id))); }
 // Отзывы: отдельная коллекция, приложение только пишет, читает владелец в консоли Firebase
 export function addFeedback(data) { fire(F.addDoc(F.collection(db, 'feedback'), data)); return Promise.resolve(); }
+
+/* ---------- поддержка ----------
+   Переписка support/{uid}: документ с последним сообщением и отметками «прочитано»,
+   сообщения в support/{uid}/messages. Сообщения нельзя менять и удалять. */
+export function watchSupport(uid, cb) {
+  return F.onSnapshot(d('support', uid), s => cb(s.exists() ? s.data() : null), () => cb(null));
+}
+export function watchSupportMessages(uid, cb) {
+  return F.onSnapshot(F.query(F.collection(db, 'support', uid, 'messages'), F.orderBy('at')), snap => cb(snap.docs.map(x => ({ id: x.id, ...x.data() }))), e => onError(e));
+}
+export function sendSupport(uid, name, text, kind) {
+  const at = Date.now(), t = String(text || '').slice(0, 4000);
+  fire(F.addDoc(F.collection(db, 'support', uid, 'messages'), { from: 'user', by: uid, at, text: t, kind: kind || 'text', name: name || '' }));
+  fire(F.setDoc(d('support', uid), { uid, hid: hid || '', name: name || '', lastAt: at, lastFrom: 'user', lastText: t.slice(0, 200), status: 'open', userSeen: at }, { merge: true }));
+  return Promise.resolve();
+}
+export function seenSupport(uid) { return fire(F.setDoc(d('support', uid), { uid, userSeen: Date.now() }, { merge: true })); }
+
+/* ---------- очистка записей с согласием ----------
+   wipes/{id семьи}: запрос создаёт владелец Потока в админке, каждый участник соглашается сам.
+   Ответ ждёт сервера: без сети согласие не уходит. */
+export function watchWipe(cb) {
+  return F.onSnapshot(d('wipes', hid), s => cb(s.exists() ? s.data() : null), () => cb(null));
+}
+export function agreeWipe(uid) { return F.updateDoc(d('wipes', hid), { ['agreed.' + uid]: F.serverTimestamp() }); }
+export function declineWipe(uid) { return F.updateDoc(d('wipes', hid), { status: 'declined', declinedBy: uid, declinedAt: F.serverTimestamp() }); }
