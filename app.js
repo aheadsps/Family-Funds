@@ -535,6 +535,7 @@ function render(){
   if(S.status!=='loading') document.body.dataset.ready='1';
   document.querySelector('nav.tabs').hidden=S.status!=='ready';
   $('#setBtn').hidden=S.status!=='ready';
+  supBadge(); wipeGate();
   if(S.status==='setup'){if(main.dataset.view!=='setup'||S.enterNext){S.enterNext=false;drawWizard()}return}
   if(S.status!=='ready'){main.dataset.view='gate';renderGate(main);return}
   let html='';
@@ -1673,6 +1674,86 @@ function openFeedback(){
       await write(()=>sendFeedback({kind:'free',rating:rate||null,text}),'Спасибо! Отзыв получен')});
   });
 }
+/* ---------- поддержка ----------
+   Одна переписка на человека: support/{uid}. Отвечает живой человек из команды Потока в рабочем месте.
+   Кнопка «Попросить очистить все записи» пишет сообщение kind:'wipe-ask'; очистку запускает владелец Потока,
+   а записи удаляются только после согласия каждого участника семьи в окне согласия (wipeGate). */
+let supMsgsOn=false;
+function supUnread(){const t=S.sup;return !!(t&&t.lastFrom==='staff'&&(+t.lastAt||0)>(+t.userSeen||0))}
+function supBadge(){const b=$('#setBtn');if(b)b.classList.toggle('has-dot',supUnread());const n=$('#supBtnDot');if(n)n.hidden=!supUnread()}
+const supTime=at=>{const d=new Date(+at||0),t=d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});return d.toDateString()===new Date().toDateString()?t:d.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})+', '+t};
+function supList(){
+  const L=S.supMsgs;
+  if(!L) return `<p class="note">Загружаю переписку…</p>`;
+  if(!L.length) return `<div class="sup-empty">${ic('life-buoy')}<b>Здесь можно задать любой вопрос</b><span>Про расчёты, ошибки, идеи. Отвечает человек из команды Потока, обычно в течение дня.</span></div>`;
+  return L.map(m=>{const me=m.from==='user', sys=m.kind&&m.kind!=='text';
+    return `<div class="msg ${me?'me':'them'}${sys?' sys':''}">${!me&&m.name?`<span class="who">${esc(m.name)} · поддержка</span>`:''}<div class="bub">${esc(m.text||'')}</div><span class="when">${supTime(m.at)}</span></div>`}).join('');
+}
+function supDraw(){const el=$('#supList');if(!el)return;const near=el.scrollHeight-el.scrollTop-el.clientHeight<80;el.innerHTML=supList();if(near||!el.dataset.ready){el.scrollTop=el.scrollHeight;el.dataset.ready='1'}
+  if(supUnread())DB.seenSupport(S.uid)}
+function openSupport(){
+  if(!supMsgsOn&&S.uid){supMsgsOn=true;unsubs.push(DB.watchSupportMessages(S.uid,list=>{S.supMsgs=list;supDraw()}));unsubs.push(()=>{supMsgsOn=false;S.supMsgs=null})}
+  openSheet(`${sheetHead('Поддержка')}
+  <div class="sup-list" id="supList" aria-live="polite">${supList()}</div>
+  <div class="sup-compose"><textarea id="supText" rows="2" data-nofocus="1" placeholder="Напишите сообщение" aria-label="Сообщение"></textarea><button class="btn primary" id="supSend" aria-label="Отправить">${ic('send')}</button></div>
+  <div class="err" id="supErr"></div>
+  <button class="btn ghost" id="supWipe">${ic('trash')}Попросить очистить все записи</button>`,()=>{
+    supDraw();
+    const send=async()=>{const t=$('#supText').value.trim();if(!t)return;$('#supText').value='';$('#supErr').textContent='';
+      try{await DB.sendSupport(S.uid,S.members[S.uid]||S.myName||'',t,'text')}catch(e){$('#supErr').textContent=errText(e)}};
+    $('#supSend').addEventListener('click',send);
+    $('#supText').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();send()}});
+    $('#supWipe').addEventListener('click',()=>{S.sheetReopen=()=>openSupport();backHere($('#supWipe'));openWipeAsk()});
+  });
+}
+function openWipeAsk(){
+  const n=S.tx.length, others=Object.keys(S.members).filter(id=>id!==S.uid).map(id=>S.members[id]||'участник');
+  openSheet(`${sheetHead('Очистить все записи')}
+  <div>Удалятся все ${n} ${plural(n,'запись','записи','записей')} семьи: доходы, траты, переводы, сверки и отметки об оплате. Деньги во всех фондах начнутся с нуля.</div>
+  <div class="note">Останутся фонды и их настройки, карты, источники доходов, желания и участники. Вернуть записи после очистки нельзя, поэтому сначала скачайте копию.</div>
+  ${others.length?`<div class="note">Очистка коснётся всей семьи, поэтому её подтвердит каждый участник: ${esc(others.join(', '))} и вы.</div>`:''}
+  <button class="btn ghost" data-act="export-json">${ic('file-braces')}Скачать копию</button>
+  <div class="field"><label for="wpText">Комментарий для поддержки</label><textarea id="wpText" rows="2" data-nofocus="1" placeholder="Необязательно. Например: начинаем учёт заново с нового месяца"></textarea></div>
+  <div class="err"></div>
+  <button class="btn primary" id="wpSend">${ic('send')}Отправить запрос в поддержку</button>`,()=>{
+    $('#wpSend').addEventListener('click',async()=>{const c=$('#wpText').value.trim();
+      const t='Прошу полностью очистить все записи нашей семьи.'+(c?'\n'+c:'');
+      await DB.sendSupport(S.uid,S.members[S.uid]||S.myName||'',t,'wipe-ask');
+      closeSheet();toast('Запрос отправлен. Ответ придёт в чат поддержки')});
+  });
+}
+
+/* окно согласия на очистку: поверх всего приложения, закрыть можно только ответом */
+const wipeMs=v=>v&&typeof v.toMillis==='function'?v.toMillis():(+v||0);
+function wipeOpenForMe(){const w=S.wipe;return !!(w&&w.status==='pending'&&wipeMs(w.expiresAt)>Date.now()&&(w.need||[]).includes(S.uid)&&!(w.agreed&&w.agreed[S.uid]))}
+function wipeGate(){
+  let el=$('#wipeGate');
+  if(!wipeOpenForMe()||S.status!=='ready'){if(el){el.hidden=true;el.innerHTML=''}return}
+  if(!el){el=document.createElement('div');el.id='wipeGate';el.className='wipe-gate';el.setAttribute('role','alertdialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-labelledby','wgTitle');document.body.appendChild(el)}
+  if(!el.hidden&&el.dataset.key===String(wipeMs(S.wipe.createdAt)))return;
+  const w=S.wipe, until=new Date(wipeMs(w.expiresAt)).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+  const nm=id=>esc(S.members[id]||'участник'), rest=(w.need||[]).filter(id=>id!==S.uid);
+  const yes=rest.filter(id=>w.agreed&&w.agreed[id]).map(nm), wait=rest.filter(id=>!(w.agreed&&w.agreed[id])).map(nm);
+  el.dataset.key=String(wipeMs(w.createdAt)); el.hidden=false; closeSheet(true);
+  el.innerHTML=`<div class="wg-in">
+    <div class="wg-ic">${ic('trash')}</div>
+    <h2 id="wgTitle">Подтвердите очистку записей</h2>
+    <p>Поддержка Потока подготовила полную очистку записей вашей семьи${w.byName?`. Запрос отправил(а) ${esc(w.byName)}`:''}.${w.reason?` Причина: ${esc(w.reason)}.`:''}</p>
+    <div class="wg-box"><div><b>Удалится</b><span>${S.tx.length} ${plural(S.tx.length,'запись','записи','записей')}: доходы, траты, переводы, сверки. Деньги в фондах начнутся с нуля.</span></div>
+    <div><b>Останется</b><span>Фонды и настройки, карты, источники доходов, желания, участники.</span></div></div>
+    ${rest.length?`<p class="note">Нужно согласие каждого участника семьи.${yes.length?` Уже согласились: ${yes.join(', ')}.`:''}${wait.length?` Ещё ждём: ${wait.join(', ')}.`:''}</p>`:''}
+    <button class="btn ghost" id="wgCopy">${ic('file-braces')}Скачать копию данных</button>
+    <label class="wg-check"><input type="checkbox" id="wgSure"> Понимаю, что записи нельзя будет вернуть</label>
+    <div class="err" id="wgErr"></div>
+    <div class="wg-btns"><button class="btn danger" id="wgYes" disabled>Согласен, очистить</button><button class="btn ghost" id="wgNo">Отказаться</button></div>
+    <p class="note">Запрос действует до ${esc(until)}. Записи удалит сотрудник Потока после согласия всех участников.</p>
+  </div>`;
+  $('#wgCopy').addEventListener('click',()=>exportJSON());
+  $('#wgSure').addEventListener('change',e=>{$('#wgYes').disabled=!e.target.checked});
+  const busy=(b,fn)=>async()=>{b.disabled=true;$('#wgErr').textContent='';try{await fn()}catch(e){$('#wgErr').textContent=navigator.onLine?'Не получилось отправить ответ. Возможно, срок запроса уже вышел.':'Нет связи. Ответ уходит только при подключении к интернету.';b.disabled=false}};
+  $('#wgYes').addEventListener('click',busy($('#wgYes'),async()=>{await DB.agreeWipe(S.uid);el.hidden=true;toast('Согласие отправлено')}));
+  $('#wgNo').addEventListener('click',busy($('#wgNo'),async()=>{await DB.declineWipe(S.uid);el.hidden=true;toast('Вы отказались от очистки. Записи остаются')}));
+}
 // Вопрос Шона Эллиса: через 14 дней после первой записи человека, один раз (можно отложить на 3 дня)
 function pmfDue(){
   if(!S.uid||!S.canWrite||LS.get('ff-pmf:'+S.uid)) return false;
@@ -1990,6 +2071,7 @@ document.addEventListener('click',async e=>{
   else if(act==='open-check'){if(S.canWrite)openCheck()}
   else if(act==='check-ics'){const el=$('#'+(a.dataset.time||''));exportCheckICS(el?el.value:'')}
   else if(act==='feedback'){openFeedback()}
+  else if(act==='support'){backHere(a);openSupport()}
   else if(act==='accept-docs'){const e=$('#cErr');if(!$('#cTerms').checked||!$('#cOk').checked){e.textContent='Отметьте обе галочки.';return}
     a.disabled=true;try{await DB.setConsent(S.uid,CONSENT_VER);S.needConsent=false;render();toast('Спасибо, документы приняты')}catch(err){a.disabled=false;e.textContent='Не получилось сохранить. Проверьте интернет и попробуйте ещё раз.'}}
   else if(act==='pmf'){const ans=a.dataset.a;LS.set('ff-pmf:'+S.uid,'1');sendFeedback({kind:'pmf',answer:ans});render();openPmfNote(ans)}
@@ -2787,7 +2869,8 @@ function openSettings(){
   <div class="field"><span class="lbl">Данные</span><div class="btn-row"><button class="btn ghost" data-act="export-csv">${ic('file-spreadsheet')}Записи в CSV</button><button class="btn ghost" data-act="export-json">${ic('file-braces')}Копия JSON</button></div><span class="note">CSV открывается в Excel и Google Таблицах. JSON — полная копия бюджета на случай сбоя или переезда.</span></div>
   <div class="field"><span class="lbl">Сверка дня</span>${checkTimeField('sChkT')}<span class="note">Ежедневное событие в календаре телефона с напоминанием сверить остатки.</span></div>
   <button class="btn ghost" data-act="week-open">${ic('calendar-clock')}Итоги недели</button>
-  <button class="btn primary" data-act="feedback">${ic('message-square')}Отзыв о Потоке</button>
+  <button class="btn primary" data-act="support">${ic('life-buoy')}Написать в поддержку<span class="dot-new" id="supBtnDot"${supUnread()?'':' hidden'}>новое</span></button>
+  <button class="btn ghost" data-act="feedback">${ic('message-square')}Отзыв о Потоке</button>
   <button class="btn ghost" data-act="tour">${ic('lightbulb')}Показать подсказки</button>
   <div class="field"><span class="lbl">Документы</span><div class="doc-links"><a href="terms.html" target="_blank" rel="noopener">Пользовательское соглашение</a><a href="privacy.html" target="_blank" rel="noopener">Политика обработки данных</a><a href="consent.html" target="_blank" rel="noopener">Согласие на обработку данных</a></div></div>
   <button class="btn ghost" data-act="refresh-app">${ic('refresh-cw')}Обновить приложение</button>
@@ -2835,6 +2918,8 @@ function startHousehold(hid){
   unsubs.push(DB.watchCol('wishes',list=>{S.wishes=list.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));done()},()=>{}));
   unsubs.push(DB.watchCol('members',list=>{S.members={};for(const m of list)S.members[m.id]=m.name||'';S.names={...S.members,[S.uid]:'вы'};done()},()=>{}));
   unsubs.push(DB.watchHousehold(h=>{S.household=h;gotH=true;done()},()=>{gotH=true;done()}));
+  unsubs.push(DB.watchSupport(S.uid,t=>{S.sup=t;supBadge()}));
+  unsubs.push(DB.watchWipe(w=>{S.wipe=w;wipeGate()}));
 }
 
 // ссылка-приглашение ?join=КОД: запоминаем код до входа и убираем его из адреса

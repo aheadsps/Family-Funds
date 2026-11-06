@@ -13,9 +13,76 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.active == true;
     }
 
+    function isOwner() {
+      return isStaff() && get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.role == 'owner';
+    }
+    // очистка записей семьи: открытый запрос, срок не вышел, каждый участник из списка need согласился
+    function wipeActive(w) { return w.status == 'pending' && request.time < w.expiresAt; }
+    function wipeReady(hid) {
+      return isOwner() && exists(/databases/$(database)/documents/wipes/$(hid))
+        && wipeActive(get(/databases/$(database)/documents/wipes/$(hid)).data)
+        && get(/databases/$(database)/documents/wipes/$(hid)).data.agreed.keys().hasAll(get(/databases/$(database)/documents/wipes/$(hid)).data.need);
+    }
+    function onlyKeys(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
     // сотрудники: каждый видит свою запись, активный сотрудник видит всех; менять пока можно только в консоли
     match /staff/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+    }
+
+    // журнал действий сотрудников: только создание, время ставит сервер, изменить или удалить нельзя
+    match /audit/{id} {
+      allow read: if isStaff();
+      allow create: if isStaff() && request.resource.data.by == request.auth.uid && request.resource.data.at == request.time
+        && request.resource.data.size() <= 20;
+    }
+
+    // чат с поддержкой: одна переписка на человека, support/{uid}; сообщения нельзя менять и удалять
+    match /support/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+      allow create, update: if (signedIn() && request.auth.uid == uid && request.resource.data.uid == uid
+          && request.resource.data.size() <= 16)
+        || isStaff();
+      match /messages/{mid} {
+        allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+        allow create: if request.resource.data.size() <= 10
+          && request.resource.data.text is string && request.resource.data.text.size() <= 4000
+          && request.resource.data.at is number
+          && ((signedIn() && request.auth.uid == uid && request.resource.data.from == 'user'
+                && request.resource.data.by == uid && request.resource.data.kind in ['text', 'wipe-ask'])
+            || (isStaff() && request.resource.data.from == 'staff' && request.resource.data.by == request.auth.uid));
+      }
+    }
+
+    // запрос на полную очистку записей семьи: создаёт владелец Потока, соглашается каждый участник семьи сам
+    match /wipes/{hid} {
+      function newWipe() {
+        let w = request.resource.data;
+        return w.hid == hid && w.status == 'pending' && w.by == request.auth.uid && w.createdAt == request.time
+          && w.expiresAt is timestamp && w.expiresAt > request.time && w.expiresAt <= request.time + duration.value(25, 'h')
+          && w.need is list && w.need.size() > 0 && w.need.size() <= 20 && w.agreed is map && w.agreed.size() == 0 && w.count is number
+          && w.size() <= 16;
+      }
+      allow read: if isStaff() || isMember(hid);
+      allow create: if isOwner() && newWipe();
+      allow update: if
+        // новый запрос поверх завершённого, отклонённого, отменённого или просроченного
+        (isOwner() && !wipeActive(resource.data) && newWipe())
+        // владелец отменяет открытый запрос
+        || (isOwner() && resource.data.status == 'pending' && request.resource.data.status == 'cancelled'
+            && request.resource.data.cancelledAt == request.time && onlyKeys(['status', 'cancelledAt']))
+        // владелец отмечает выполненным, когда согласились все
+        || (isOwner() && resource.data.status == 'pending' && resource.data.agreed.keys().hasAll(resource.data.need)
+            && request.resource.data.status == 'done' && request.resource.data.doneAt == request.time
+            && request.resource.data.deleted is number && onlyKeys(['status', 'doneAt', 'deleted']))
+        // участник семьи соглашается за себя
+        || (isMember(hid) && wipeActive(resource.data) && request.auth.uid in resource.data.need && onlyKeys(['agreed'])
+            && request.resource.data.agreed.diff(resource.data.agreed).affectedKeys().hasOnly([request.auth.uid])
+            && request.resource.data.agreed[request.auth.uid] == request.time)
+        // участник семьи отказывается
+        || (isMember(hid) && wipeActive(resource.data) && request.auth.uid in resource.data.need
+            && request.resource.data.status == 'declined' && request.resource.data.declinedBy == request.auth.uid
+            && request.resource.data.declinedAt == request.time && onlyKeys(['status', 'declinedBy', 'declinedAt']));
     }
 
     match /users/{uid} {
@@ -62,6 +129,8 @@ service cloud.firestore {
         // фонд наград (funds/reward) есть всегда, удалить его нельзя
         allow read: if col in ['funds', 'tx', 'wishes'] && (isMember(hid) || isStaff());
         allow delete: if col in ['funds', 'tx', 'wishes'] && isMember(hid) && !(col == 'funds' && docId == 'reward');
+        // владелец Потока удаляет записи только по очистке, на которую согласились все участники семьи
+        allow delete: if col == 'tx' && wipeReady(hid);
         // запись — обычная карточка, а не мусор: не больше 60 полей
         allow create, update: if col in ['funds', 'tx', 'wishes'] && isMember(hid) && request.resource.data.size() <= 60;
       }
