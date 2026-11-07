@@ -690,9 +690,10 @@ function renderFunds(){
       ${S.canWrite?`${canDrag?`<button class="grip" data-id="${esc(f.id)}" aria-label="Перетащить «${esc(f.name)}». Стрелки вверх и вниз меняют позицию, сейчас ${i+1} из ${n}">${ic('grip-vertical')}</button>`:'<span></span>'}${f.kind==='reward'?'<span></span>':`<button class="del" data-act="ask-del-fund" data-id="${esc(f.id)}" aria-label="Удалить фонд «${esc(f.name)}»">${ic('trash')}</button>`}`:'<span></span><span></span>'}
       ${S.confirmFund===f.id?`<div class="confirm"><span>Удалить «${esc(f.name)}»?${f.kind!=='debt'&&s.balance>0.5?` В нём лежит ${fmt(s.balance)}, эти деньги перейдут в «Без фонда».`:''} Записи в истории останутся.</span><span class="confirm-btns"><button class="btn sm danger" data-act="del-fund" data-id="${esc(f.id)}">Удалить</button><button class="btn sm ghost" data-act="cancel-del">Отмена</button></span></div>`:''}
     </div>`};
+  if(S.canWrite) h+=`<div class="fund-tools"><button class="btn ghost" data-act="open-shift">${ic('arrow-left-right')}Перевести между фондами</button></div>`;
   h+=`<div id="fundList">${FTIERS.map(([id,t,d,fn])=>{const L=funds.filter(fn); if(!L.length) return '';
     return `<section class="block tier"><h2>${t}</h2><p class="note">${d}</p><div class="list river" data-tier="${id}">${L.map((f,i)=>row(f,i,L.length,id==='queue'&&L.length>1)).join('')}</div></section>`}).join('')}</div>`;
-  if(S.canWrite) h+=`<div class="btn-col"><button class="btn primary" data-act="new-fund">${ic('plus')}Добавить фонд</button><button class="btn ghost" data-act="open-shift">${ic('arrow-left-right')}Перевести между фондами</button></div>`;
+  if(S.canWrite) h+=`<div class="btn-col"><button class="btn primary" data-act="new-fund">${ic('plus')}Добавить фонд</button></div>`;
   return h;
 }
 
@@ -897,17 +898,18 @@ function openDeleteIncome(t){
   });
 }
 // Доход и «разложить» без ручной раскладки: сумма делится по правилам фондов
-function openShift(fromId){
+function openShift(fromId,toId){
   if(!S.canWrite) return;
-  const src=shiftSources();
-  if(!src.length){toast('Пока ни в одном фонде нет денег, переводить нечего.');return}
-  const from0=src.some(x=>x.id===fromId)?fromId:src[0].id;
+  const src=shiftSources().filter(x=>x.id!==toId);
+  if(!src.length){toast(toId?'В других фондах нет денег, переводить неоткуда.':'Пока ни в одном фонде нет денег, переводить нечего.');return}
+  // «Пополнить из другого фонда»: если есть деньги без фонда, берём их, иначе человек сам выбирает, откуда
+  const from0=src.some(x=>x.id===fromId)?fromId:toId?(src.some(x=>x.id==='_free')?'_free':''):src[0].id;
   const toList=id=>activeFunds().filter(f=>f.id!==id&&!(f.kind==='percent'&&f.taxOnly));
   const toOpts=(id,sel)=>toList(id).map(f=>`<option value="${esc(f.id)}" ${f.id===sel?'selected':''}>${esc(fundEmoji(f))} ${esc(f.name)}</option>`).join('');
   openSheet(`${sheetHead('Перевод между фондами')}${typeSeg('shift')}
   <p class="note">Деньги переходят из одного фонда в другой. Доход и траты от этого не меняются.</p>
-  <div class="field"><label for="shFrom">Откуда</label><select id="shFrom">${src.map(x=>`<option value="${esc(x.id)}" ${x.id===from0?'selected':''}>${esc(x.id==='_free'?'Без фонда':fundEmoji(fundById(x.id))+' '+x.name)} · ${fmt(x.bal)}</option>`).join('')}</select></div>
-  <div class="field"><label for="shTo">Куда</label><select id="shTo">${toOpts(from0,'')}</select></div>
+  <div class="field"><label for="shFrom">Откуда</label><select id="shFrom">${from0?'':'<option value="" selected disabled>Выберите фонд</option>'}${src.map(x=>`<option value="${esc(x.id)}" ${x.id===from0?'selected':''}>${esc(x.id==='_free'?'Без фонда':fundEmoji(fundById(x.id))+' '+x.name)} · ${fmt(x.bal)}</option>`).join('')}</select></div>
+  <div class="field"><label for="shTo">Куда</label><select id="shTo">${toOpts(from0,toId||'')}</select></div>
   <div class="field"><label for="shAmt">Сумма</label><input class="big" id="shAmt" inputmode="decimal" placeholder="0 ₽" autocomplete="off"><div class="chips sh-q"><button type="button" class="chip-btn" data-shq="1">Всё</button><button type="button" class="chip-btn" data-shq=".5">Половину</button></div></div>
   <div class="field"><label for="shNote">Комментарий</label><input id="shNote" data-nofocus="1" placeholder="Например: решили вдвоём" autocomplete="off"></div>
   <div id="shHint"></div><div class="err" id="shErr"></div>
@@ -922,6 +924,7 @@ function openShift(fromId){
     $('.sh-q').addEventListener('click',e=>{const b=e.target.closest('[data-shq]'); if(!b) return; $('#shAmt').value=nf.format(Math.round(bal()*+b.dataset.shq)); hint()});
     $('#shSave').addEventListener('click',async()=>{
       const a=amt(), fid=$('#shFrom').value, tid=$('#shTo').value, err=$('#shErr');
+      if(!fid){err.textContent='Выберите, из какого фонда перевести.';return}
       if(!(a>0)){err.textContent='Впишите сумму больше нуля.';return}
       if(!tid){err.textContent='Выберите, в какой фонд перевести.';return}
       if(a>bal()){err.textContent=`В «${fundName(fid)}» сейчас только ${fmt(bal())}.`;return}
@@ -1183,7 +1186,10 @@ function openFund(f,kindPreset){
   const pct0=f.kind==='percent'||f.kind==='reward'?f.value:f.pct;
   const tgt0=f.kind==='goal'?f.value:0;
   let icon=f.icon||'';
-  openSheet(`${sheetHead(isNew?(st0.debt&&!st0.accum?'Новый долг':'Новый фонд'):'Фонд')}
+  const isTax=f.kind==='percent'&&f.taxOnly, bal0=Math.round(s.balance||0);
+  const canOut=!isNew&&S.canWrite&&f.kind!=='debt'&&!isTax&&bal0>0, canIn=!isNew&&S.canWrite&&!isTax&&shiftSources().some(x=>x.id!==f.id);
+  const moneyTop=isNew||isTax?'':`<section class="fund-top"><div class="ft-bal"><span class="note">${f.kind==='debt'?'Отложено на платёж':'Сейчас в фонде'}</span><b>${fmt(f.kind==='debt'?Math.max(0,bal0):bal0)}</b></div>${canOut||canIn?`<div class="ft-act">${canOut?`<button class="btn sm primary" data-act="open-shift" data-id="${esc(f.id)}">${ic('arrow-left-right')}Перевести в другой фонд</button>`:''}${canIn?`<button class="btn sm ghost" data-act="open-shift" data-to="${esc(f.id)}">${ic('plus')}Пополнить из другого фонда</button>`:''}</div>`:''}</section>`;
+  openSheet(`${sheetHead(isNew?(st0.debt&&!st0.accum?'Новый долг':'Новый фонд'):'Фонд')}${moneyTop}
   <div class="field"><label for="fName">Название</label><input id="fName" value="${esc(f.name)}" placeholder="${st0.debt?'Например, Кредитка':'Например, Квартира'}"></div>
   <div class="field"><span class="lbl">Иконка <span class="muted" id="fIcoNote"></span></span><div class="emojis" id="fIco">${EMOJI.map(e=>`<button type="button" data-e="${e}" aria-pressed="${icon===e}" aria-label="Иконка ${e}">${e}</button>`).join('')}</div></div>
   ${isReward?'':`<div class="field"><span class="lbl">Как фонд получает деньги</span>
@@ -1209,9 +1215,9 @@ function openFund(f,kindPreset){
     <p class="note">${s.collected-s.balance>0.5?`Накоплено ${fmt(s.collected)}, потрачено ${fmt(s.collected-s.balance)}. `:''}${s.balance>0.5?`В фонде осталось ${fmt(s.balance)}. Закройте фонд, и остаток уйдёт туда, куда скажете.`:s.balance<-0.5?`Фонд в минусе на ${fmt(-s.balance)}. Закройте фонд, и минус покроется из выбранного фонда.`:'Закройте фонд, чтобы он больше не забирал деньги.'}</p>
     ${Math.abs(s.balance)>0.5?`<div class="field"><label for="fCloseTo">${s.balance>0?'Куда перенести остаток':'Из какого фонда покрыть минус'}</label><select id="fCloseTo">${activeFunds().filter(x=>x.id!==f.id&&x.kind!=='debt').sort((x,y)=>(y.kind==='rest')-(x.kind==='rest')).map(x=>`<option value="${esc(x.id)}">${esc(x.name)} · ${fmt(fstate(x,get).balance)}</option>`).join('')}<option value="_free">Без фонда</option></select></div>`:''}
     <button class="btn primary" id="fClose">${ic('check')}${f.isDebt?'Долг оплачен, закрыть':'Цель выполнена, закрыть'}</button></section>`:''}
-  ${!isNew&&S.canWrite&&f.kind!=='debt'&&Math.round(fstate(f,stats().get).balance)>0?`<button class="btn ghost" data-act="open-shift" data-id="${esc(f.id)}">${ic('arrow-left-right')}Перевести в другой фонд</button>`:''}
   ${!isNew&&canPause(f)?`<button class="btn ghost" id="fPause">${paused(f)?`${ic('play')}Снять с паузы`:`${ic('pause')}Пауза на ${NOM[+curMonth().slice(5)-1].toLowerCase()}`}</button><span class="note">${paused(f)?'В этом месяце фонд не получает деньги. С начала следующего всё вернётся само.':'В этом месяце фонд не будет получать деньги и напоминать о платеже. С начала следующего всё вернётся само.'}</span>`:''}
   ${isNew||isReward?'':`<button class="btn danger" id="fDel">${ic('trash')}Удалить фонд</button>`}`, ()=>{
+    if(!isNew) S.sheetReopen=sc=>{openFund(fundById(f.id)||f);requestAnimationFrame(()=>{const sh=$('#sheet');if(sh&&sc)sh.scrollTop=sc})};
     $('#fPause')?.addEventListener('click',()=>setPause(f,!paused(f)));
     let {rule,debt,accum}=st0;
     const curKind=()=>isReward?'reward':accum?'goal':debt?'debt':rule;
@@ -2137,7 +2143,7 @@ document.addEventListener('click',async e=>{
   if(await wzAction(act,a))return;
   if(act==='close')closeSheet();
   else if(act==='open-income'){if(S.canWrite)openIncome()}
-  else if(act==='open-shift'){if(S.canWrite)openShift(a.dataset.id||'')}
+  else if(act==='open-shift'){if(S.canWrite){backHere(a);openShift(a.dataset.id||'',a.dataset.to||'')}}
   else if(act==='open-expense'){if(S.canWrite)openExpense()}
   else if(act==='quick-spend')quickSpend(a.dataset.fund,a.dataset.amt,a.dataset.note);
   else if(act==='week-open')openWeek();
