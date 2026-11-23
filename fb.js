@@ -26,7 +26,7 @@ export async function init() {
 
 /* ---------- вход ---------- */
 export function onAuth(cb) {
-  return A.onAuthStateChanged(auth, u => cb(u ? { uid: u.uid, email: u.email, name: u.displayName || '' } : null));
+  return A.onAuthStateChanged(auth, u => cb(u ? { uid: u.uid, email: u.email, name: u.displayName || '', created: Date.parse((u.metadata && u.metadata.creationTime) || '') || 0 } : null));
 }
 export function signIn(email, pw) { return A.signInWithEmailAndPassword(auth, email, pw); }
 // consent: версия документов (соглашение, политика, согласие), которые человек принял при регистрации
@@ -61,7 +61,7 @@ export async function createHousehold(uid, name, seed) {
   const code = makeCode();
   await F.setDoc(ref, { owner: uid, inviteCode: code, createdAt: Date.now() });
   await F.setDoc(d('households', ref.id, 'members', uid), { name: name || '', joinedAt: Date.now() });
-  await F.setDoc(d('invites', code), { hid: ref.id });
+  await F.setDoc(d('invites', code), { hid: ref.id, by: uid });
   await F.setDoc(d('users', uid), { hid: ref.id, name: name || '' }, { merge: true });
   if (seed) {
     const items = [];
@@ -93,7 +93,7 @@ export async function joinHousehold(uid, name, code) {
 
 export async function newInvite(oldCode) {
   const code = makeCode();
-  await F.setDoc(d('invites', code), { hid });
+  await F.setDoc(d('invites', code), { hid, by: (auth.currentUser && auth.currentUser.uid) || '' });
   await F.updateDoc(d('households', hid), { inviteCode: code });
   if (oldCode) { try { await F.deleteDoc(d('invites', oldCode)); } catch (e) {} }
   return code;
@@ -151,3 +151,26 @@ export function watchWipe(cb) {
 }
 export function agreeWipe(uid) { return F.updateDoc(d('wipes', hid), { ['agreed.' + uid]: F.serverTimestamp() }); }
 export function declineWipe(uid) { return F.updateDoc(d('wipes', hid), { status: 'declined', declinedBy: uid, declinedAt: F.serverTimestamp() }); }
+
+
+/* ---------- аналитика ----------
+   activity/{uid}_{ГГГГ-ММ-ДД}: сессии, активные секунды, просмотры экранов за день. Одна запись на сброс,
+   счётчики прибавляются на сервере (increment), поэтому два телефона одного человека не мешают друг другу.
+   users/{uid}.acq: откуда человек пришёл (метка ссылки, приглашение, сайт-источник), пишется один раз. */
+export function trackDay(uid, day, inc, meta) {
+  const screens = {};
+  for (const [k, n] of Object.entries(inc.screens || {})) screens[k] = F.increment(n);
+  return fire(F.setDoc(d('activity', uid + '_' + day), {
+    uid, hid: hid || '', day, last: Date.now(), ...meta,
+    sessions: F.increment(inc.sessions || 0), sec: F.increment(inc.sec || 0), views: F.increment(inc.views || 0), screens
+  }, { merge: true }));
+}
+export async function saveAcq(uid, acq, created) {
+  const a = { ...acq };
+  if (a.join) {
+    try { const inv = await F.getDoc(d('invites', a.join)); if (inv.exists()) { a.inviteHid = inv.data().hid || ''; a.inviteBy = inv.data().by || ''; } } catch (e) {}
+  }
+  const data = { acq: a };
+  if (created) data.createdAt = created;
+  return F.setDoc(d('users', uid), data, { merge: true });
+}

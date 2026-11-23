@@ -173,5 +173,27 @@ await t('журнал: сотрудник пишет от своего имен�
   await assertFails(deleteDoc(doc(as('max'),'audit/a1')));
   await assertSucceeds(getDoc(doc(as('sup'),'audit/a1')));
   await assertFails(getDoc(doc(as('bob'),'audit/a1'))); });
+// аналитика
+await t('аналитика: человек пишет свою активность за день, сотрудник читает, чужой не может', async () => { await seedStaff();
+  const b = as('bob');
+  await assertSucceeds(setDoc(doc(b,'activity/bob_2026-11-23'), { uid:'bob', hid:'h1', day:'2026-11-23', sessions:1, sec:30, views:3, screens:{ 'Главная':2, 'Поддержка':1 }, ver:'i1', dev:'ios', pwa:true, last:1 }, { merge:true }));
+  await assertSucceeds(setDoc(doc(b,'activity/bob_2026-11-23'), { uid:'bob', day:'2026-11-23', sec:45 }, { merge:true }));
+  await assertFails(setDoc(doc(b,'activity/alice_2026-11-23'), { uid:'alice', day:'2026-11-23', sec:1 }));
+  await assertFails(setDoc(doc(b,'activity/bob_2026-11-24'), { uid:'bob', day:'2026-11-23', sec:1 }));
+  await assertFails(setDoc(doc(b,'activity/bob_x'), { uid:'bob', day:'x', sec:1 }));
+  await assertFails(getDoc(doc(b,'activity/bob_2026-11-23')));
+  await assertSucceeds(getDoc(doc(as('max'),'activity/bob_2026-11-23')));
+  await assertFails(getDoc(doc(as('old'),'activity/bob_2026-11-23'))); });
+await t('аналитика: ссылки с меткой создаёт только владелец Потока', async () => { await seedWipe();
+  await assertSucceeds(setDoc(doc(as('max'),'links/tg-25nov'), { name:'Telegram, пост 25 ноября', slug:'tg-25nov', by:'max', at:1 }));
+  await assertFails(setDoc(doc(as('sup'),'links/x'), { name:'x', slug:'x' }));
+  await assertFails(setDoc(doc(as('bob'),'links/y'), { name:'y', slug:'y' }));
+  await assertSucceeds(getDoc(doc(as('sup'),'links/tg-25nov')));
+  await assertFails(getDoc(doc(as('bob'),'links/tg-25nov')));
+  await assertSucceeds(deleteDoc(doc(as('max'),'links/tg-25nov'))); });
+await t('аналитика: источник перехода человек пишет в свой профиль, приглашение хранит автора', async () => { await seedStaff();
+  await assertSucceeds(setDoc(doc(as('bob'),'users/bob'), { acq:{ via:'link', src:'tg', at:1 }, createdAt:1 }, { merge:true }));
+  await assertSucceeds(setDoc(doc(as('bob'),'invites/CODE2345'), { hid:'h1', by:'bob' }));
+  await assertSucceeds(getDoc(doc(as('max'),'users/bob'))); });
 console.log(results.map(r => r.join(' ')).join('\n')); console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
 await env.cleanup(); process.exit(0);

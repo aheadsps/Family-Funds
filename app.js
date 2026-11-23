@@ -540,6 +540,7 @@ function render(){
   if(S.status!=='ready'){main.dataset.view='gate';renderGate(main);return}
   let html='';
   if(!S.canWrite) html+=`<div class="ro">У вас доступ только для просмотра. Чтобы вносить записи, владелец должен выдать права на изменение.</div>`;
+  if(S.status==='ready'&&TRK.tab!==S.tab){TRK.tab=S.tab;trkView(TAB_KEY[S.tab]||S.tab)}
   if(S.tab==='now') html+=renderNow();
   else if(S.tab==='funds') html+=renderFunds();
   else if(S.tab==='debts') html+=renderDebts();
@@ -820,6 +821,7 @@ let sheetT, sheetBackNext=null;
    Шторка, которую можно вернуть, кладёт функцию в S.sheetReopen (в onMount), а нажатие внутри неё готовит возврат. */
 function openSheet(html,onMount){
   S.sheetBack=sheetBackNext; sheetBackNext=null; S.sheetReopen=null; S.sheetRefresh=null;
+  {const m=/<h2[^>]*>([\s\S]*?)<\/h2>/.exec(html);if(m)trkView(m[1].replace(/<[^>]+>/g,'').replace(/&[a-z#0-9]+;/gi,' '))}
   clearTimeout(sheetT); $('#scrim').classList.remove('closing');
   const sh=$('#sheet'); sh.classList.remove('closing'); sh.innerHTML=`<div class="wrap">${html}</div>`; sh.hidden=false; $('#scrim').hidden=false; sh.scrollTop=0;
   onMount&&onMount(sh); const f=sh.querySelector('input.big,input'); f&&!f.dataset.nofocus&&setTimeout(()=>{if(!sh.contains(document.activeElement)||document.activeElement===document.body)f.focus()},60);   // не отбираем фокус, если вы уже начали вводить в другое поле
@@ -2934,7 +2936,7 @@ AUTH_ERR._name='Напишите, как вас зовут: имя видно в
 AUTH_ERR._consent='Отметьте согласие на обработку данных: без него мы не можем хранить ваш бюджет.';
 AUTH_ERR._terms='Примите пользовательское соглашение, чтобы зарегистрироваться.';
 // Версия документов: terms.html, privacy.html, consent.html. Поднимите её, когда документы изменятся: все примут их заново
-const CONSENT_VER='2026-11-16';
+const CONSENT_VER='2026-11-23';
 // Две отдельные галочки: согласие на обработку данных по закону оформляется отдельно от соглашения
 function docChecks(p){return `<label class="check consent"><input type="checkbox" id="${p}Terms"><span>Принимаю <a href="terms.html" target="_blank" rel="noopener">пользовательское соглашение</a> и <a href="privacy.html" target="_blank" rel="noopener">политику обработки данных</a></span></label>
   <label class="check consent"><input type="checkbox" id="${p}Ok"><span>Даю <a href="consent.html" target="_blank" rel="noopener">согласие на обработку персональных данных</a></span></label>`}
@@ -3006,6 +3008,41 @@ function ensureReward(){
   let last=null; for(const f of activeFunds()) if(f.kind==='monthly'||f.kind==='percent') last=f;
   DB.set('funds','reward',{name:'Награды',kind:'reward',value:REWARD_DEFAULT,start:0,taxOnly:false,deadline:'',icon:'',accountId:'',order:last?(+last.order||0)+0.5:0.5,createdAt:Date.now()});
 }
+/* ---------- аналитика: время в приложении, сессии, экраны ----------
+   Сессия — заход после 30 минут вне приложения. Активное время копится по 15 секунд, пока приложение
+   на экране и человек касался его за последние 2 минуты. Сброс в activity/{uid}_{день} раз в 2 минуты
+   и при сворачивании (DB.trackDay). Суммы денег и тексты записей сюда не попадают. */
+const TRK={on:false,sessions:0,sec:0,views:0,screens:{},lastHide:0,lastInput:Date.now(),tab:''};
+const TAB_KEY={now:'Главная',funds:'Фонды',debts:'Долги',res:'Ресурсы',hist:'История'};
+const trkDev=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)?'ios':/android/i.test(navigator.userAgent)?'android':'desktop';
+const trkPwa=()=>!!((window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone);
+function trkView(name){if(!TRK.on)return;const k=String(name||'').replace(/[.\/\[\]*~`]/g,' ').trim().slice(0,40);if(!k)return;TRK.views++;
+  if(TRK.screens[k]||Object.keys(TRK.screens).length<40)TRK.screens[k]=(TRK.screens[k]||0)+1}
+function trkFlush(){
+  if(!TRK.on||!S.uid||!(TRK.sessions||TRK.sec||TRK.views))return;
+  const inc={sessions:TRK.sessions,sec:TRK.sec,views:TRK.views,screens:TRK.screens};
+  TRK.sessions=0;TRK.sec=0;TRK.views=0;TRK.screens={};
+  DB.trackDay(S.uid,today(),inc,{ver:APP_VER,dev:trkDev(),pwa:trkPwa()});
+}
+function trkStart(){
+  if(TRK.on)return; TRK.on=true; TRK.sessions=1;
+  ['pointerdown','keydown','touchstart','scroll'].forEach(ev=>addEventListener(ev,()=>{TRK.lastInput=Date.now()},{passive:true}));
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden){TRK.lastHide=Date.now();trkFlush()}
+    else{if(TRK.lastHide&&Date.now()-TRK.lastHide>30*60e3)TRK.sessions++;TRK.lastInput=Date.now()}
+  });
+  addEventListener('pagehide',trkFlush);
+  setInterval(()=>{if(!document.hidden&&S.uid&&Date.now()-TRK.lastInput<120e3)TRK.sec+=15},15e3);
+  setInterval(()=>{if(!document.hidden)trkFlush()},120e3);
+}
+// источник перехода и дата регистрации: один раз на человека. Зарегистрировался давно — источник «до учёта»
+function trkAcq(u,prof){
+  if(prof&&prof.acq)return;
+  let a=null; try{a=JSON.parse(LS.get('ff-acq')||'null')}catch(e){}
+  const fresh=u.created&&Date.now()-u.created<3*864e5;
+  const acq=fresh&&a?{...a,via:a.join?'invite':a.src?'link':a.ref?'site':'direct'}:{via:'early'};
+  DB.saveAcq(u.uid,acq,u.created||0).then(()=>LS.del('ff-acq')).catch(()=>{});
+}
 function startHousehold(hid){
   rwBusy=false; stopWatching(); S.hid=hid; DB.useHousehold(hid); S.status='loading'; render();
   let gotF=false,gotT=false,gotH=false;
@@ -3031,6 +3068,15 @@ function startHousehold(hid){
 // ссылка-приглашение ?join=КОД: запоминаем код до входа и убираем его из адреса
 {const u=new URL(location.href), j=(u.searchParams.get('join')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(j){LS.set('ff-join',j);S.authMode='register';u.searchParams.delete('join');history.replaceState(null,'',u.pathname+u.search+u.hash)}}
+// откуда пришёл человек: метка ссылки ?src= (или utm_source), кампания, сайт-источник, приглашение.
+// Запоминаем до регистрации; новая метка или приглашение перекрывают прежний прямой заход. Пишется в профиль один раз (saveAcq).
+{const u=new URL(location.href), p=u.searchParams, clean=v=>String(v||'').trim().slice(0,60).replace(/[^\w\-.а-яё]/gi,'');
+  const src=clean(p.get('src')||p.get('utm_source')), cmp=clean(p.get('utm_campaign')), med=clean(p.get('utm_medium'));
+  let ref=''; try{ref=document.referrer?new URL(document.referrer).host:''}catch(e){} if(ref===location.host)ref='';
+  const join=LS.get('ff-join')||'';
+  let old=null; try{old=JSON.parse(LS.get('ff-acq')||'null')}catch(e){}
+  if(!old||((src||join||ref)&&!(old.src||old.join))) LS.set('ff-acq',JSON.stringify({src,cmp,med,ref,join,at:Date.now()}));
+  if(src||cmp||med){['src','utm_source','utm_campaign','utm_medium','utm_content','utm_term'].forEach(k=>u.searchParams.delete(k));history.replaceState(null,'',u.pathname+u.search+u.hash)}}
 document.querySelectorAll('[data-ic]').forEach(el=>{el.outerHTML=ic(el.dataset.ic)});
 $('#setBtn').innerHTML=ic('menu');
 render();
@@ -3044,12 +3090,14 @@ render();
   DB.setErrorHandler(e=>{if(e&&e.code==='permission-denied')toast('Сервер не принял запись: нет доступа.');else if(e&&e.code!=='unavailable')toast('Запись не сохранилась на сервере. Попробуйте ещё раз.')});
   DB.onAuth(async u=>{
     stopWatching(); closeSheet(true);
-    if(!u){S.uid=null;S.hid=null;S.funds=[];S.tx=[];S.wishes=[];S.members={};S.status='auth';render();return}
+    if(!u){trkFlush();S.uid=null;S.hid=null;S.funds=[];S.tx=[];S.wishes=[];S.members={};S.status='auth';render();return}
     S.uid=u.uid; S.myName=u.name||S.pendingName||''; S.status='loading'; render();
     // бюджет с прошлого входа открываем сразу из кэша телефона, профиль проверяем в фоне
     const hk='ff-hid:'+u.uid, known=LS.get(hk);
     if(known) startHousehold(known);
+    trkStart();
     let prof=null; try{prof=await DB.getProfile(u.uid)}catch(e){if(known)return}
+    trkAcq(u,prof);
     if(prof&&prof.name&&!S.myName)S.myName=prof.name;
     S.needConsent=!!prof&&prof.consentVer!==CONSENT_VER; if(S.needConsent&&S.status==='ready')renderSoon();
     if(!prof||!prof.hid){LS.del(hk);if(known)stopWatching();S.status='onboard';render();return}
